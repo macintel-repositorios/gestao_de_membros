@@ -139,7 +139,7 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
   const [fotoBase64, setFotoBase64] = useState<string | null>(membro?.fotoUrl || null);
 
   // Lista de membros para seleção de cônjuge
-  const [membrosLista, setMembrosLista] = useState<Pick<Membro, 'id' | 'nome' | 'telefone'>[]>([]);
+  const [membrosLista, setMembrosLista] = useState<Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[]>([]);
   const [loadingMembros, setLoadingMembros] = useState(false);
 
   const form = useForm<MembroFormData>({
@@ -198,6 +198,7 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
   const watchAdicionarNovoConjuge = form.watch("adicionarNovoConjuge");
   const watchTipoConjuge = form.watch("tipoConjuge");
   const showCargoConjuge = watchTipoConjuge === "obreiro" || watchTipoConjuge === "lider";
+  const watchSexo = form.watch("sexo");
   const watchTemFuncao = form.watch("temFuncaoIgreja");
   const watchEhLider = form.watch("ehLider");
   const watchFuncoes = form.watch("funcoes") || [];
@@ -213,7 +214,7 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
         const membrosRef = getMembrosCollection(igrejaId, selectedUnidadeId);
         const membrosSnap = await getDocs(membrosRef);
         
-        const lista: Pick<Membro, 'id' | 'nome' | 'telefone'>[] = [];
+        const lista: Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[] = [];
         membrosSnap.forEach((docSnap) => {
           const data = docSnap.data();
           // Exclui o próprio membro se estiver editando
@@ -222,6 +223,7 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
               id: docSnap.id,
               nome: data.nome || "",
               telefone: data.telefone || "",
+              sexo: data.sexo || "",
             });
           }
         });
@@ -771,24 +773,30 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
                   control={form.control}
                   name="conjugeEhMembro"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={(checked) => {
-                            field.onChange(checked);
-                            if (!checked) {
-                              form.setValue("conjugeIdSelecionado", "");
-                              form.setValue("adicionarNovoConjuge", false);
-                            }
-                          }}
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel className="cursor-pointer">
-                          O cônjuge também é membro da igreja
-                        </FormLabel>
-                      </div>
+                    <FormItem>
+                      <FormLabel>O cônjuge também é membro da igreja? *</FormLabel>
+                      <Select
+                        onValueChange={(v) => {
+                          const isMembro = v === "sim";
+                          field.onChange(isMembro);
+                          if (!isMembro) {
+                            form.setValue("conjugeIdSelecionado", "");
+                            form.setValue("adicionarNovoConjuge", false);
+                          }
+                        }}
+                        value={field.value ? "sim" : "nao"}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="nao">Não</SelectItem>
+                          <SelectItem value="sim">Sim</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -817,11 +825,18 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
-                                      {membrosLista.map((m) => (
-                                        <SelectItem key={m.id} value={m.id}>
-                                          {m.nome}
-                                        </SelectItem>
-                                      ))}
+                                      {membrosLista
+                                        .filter((m) => {
+                                          if (watchSexo === "masculino") return m.sexo === "feminino";
+                                          if (watchSexo === "feminino") return m.sexo === "masculino";
+                                          return true;
+                                        })
+                                        .map((m) => (
+                                          <SelectItem key={m.id} value={m.id}>
+                                            {m.nome}
+                                          </SelectItem>
+                                        ))
+                                      }
                                     </SelectContent>
                                   </Select>
                                   <FormMessage />

@@ -63,7 +63,7 @@ function CadastroMembroContent() {
   const [membroId, setMembroId] = useState<string | null>(null);
   
   // Lista de membros para seleção de cônjuge
-  const [membrosLista, setMembrosLista] = useState<Pick<Membro, 'id' | 'nome' | 'telefone'>[]>([]);
+  const [membrosLista, setMembrosLista] = useState<Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[]>([]);
   const [loadingMembros, setLoadingMembros] = useState(false);
 
   // Endereço
@@ -224,7 +224,7 @@ function CadastroMembroContent() {
         const membrosRef = collection(db, "igrejas", igrejaId, "unidades", unidadeId, "membros");
         const membrosSnap = await getDocs(membrosRef);
         
-        const lista: Pick<Membro, 'id' | 'nome' | 'telefone'>[] = [];
+        const lista: Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[] = [];
         membrosSnap.forEach((docSnap) => {
           const data = docSnap.data();
           if (data.ativo !== false) {
@@ -232,6 +232,7 @@ function CadastroMembroContent() {
               id: docSnap.id,
               nome: data.nome || "",
               telefone: data.telefone || "",
+              sexo: data.sexo || "",
             });
           }
         });
@@ -829,19 +830,27 @@ function CadastroMembroContent() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="conjugeEhMembro"
-                        checked={conjugeEhMembro}
-                        onCheckedChange={(checked) => {
-                          setConjugeEhMembro(!!checked);
-                          if (!checked) {
+                    <div className="space-y-2">
+                      <Label>Meu cônjuge também é membro desta igreja? *</Label>
+                      <Select
+                        value={conjugeEhMembro ? "sim" : "nao"}
+                        onValueChange={(v) => {
+                          const isMembro = v === "sim";
+                          setConjugeEhMembro(isMembro);
+                          if (!isMembro) {
                             setConjugeIdSelecionado("");
                             setAdicionarNovoConjuge(false);
                           }
                         }}
-                      />
-                      <Label htmlFor="conjugeEhMembro">Meu cônjuge também é membro da igreja</Label>
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="nao">Não</SelectItem>
+                          <SelectItem value="sim">Sim</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {conjugeEhMembro ? (
@@ -865,11 +874,18 @@ function CadastroMembroContent() {
                                       <SelectValue placeholder="Selecione na lista" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {membrosLista.map((m) => (
-                                        <SelectItem key={m.id} value={m.id}>
-                                          {m.nome}
-                                        </SelectItem>
-                                      ))}
+                                      {membrosLista
+                                        .filter((m) => {
+                                          if (sexo === "masculino") return m.sexo === "feminino";
+                                          if (sexo === "feminino") return m.sexo === "masculino";
+                                          return true;
+                                        })
+                                        .map((m) => (
+                                          <SelectItem key={m.id} value={m.id}>
+                                            {m.nome}
+                                          </SelectItem>
+                                        ))
+                                      }
                                     </SelectContent>
                                   </Select>
                                 </div>
