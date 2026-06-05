@@ -61,6 +61,7 @@ import {
   Phone,
   MapPin,
   Building2,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -444,6 +445,17 @@ export default function MembrosPage() {
                                   <Pencil className="mr-2 h-4 w-4" />
                                   Editar
                                 </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  const origin = typeof window !== "undefined" ? window.location.origin : "";
+                                  const link = `${origin}/cadastro/membro?igreja=${igrejaId}&unidade=${membro.unidadeId}&membro=${membro.id}`;
+                                  navigator.clipboard.writeText(link);
+                                  toast.success("Link de atualização copiado para a área de transferência!");
+                                }}
+                              >
+                                <Copy className="mr-2 h-4 w-4" />
+                                Copiar Link de Atualização
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive"

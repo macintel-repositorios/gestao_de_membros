@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { addDoc, Timestamp, collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { addDoc, Timestamp, collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,9 +18,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Church, User, CheckCircle2, MapPin, Heart, Users } from "lucide-react";
+import { Church, User, CheckCircle2, MapPin, Heart, Users, Camera } from "lucide-react";
 import { TIPOS_MEMBRO, TipoMembro, CARGOS_MEMBRO, CargoMembro, ESTADOS_CIVIS, EstadoCivil, SEXOS, Sexo, Membro } from "@/lib/types";
 import { Search, UserPlus } from "lucide-react";
+import { FotoUpload } from "@/components/membros/foto-upload";
 
 interface UnidadeSimples {
   id: string;
@@ -54,6 +55,12 @@ function CadastroMembroContent() {
   const [cargo, setCargo] = useState<CargoMembro | "">("");
   const [cargoDescricao, setCargoDescricao] = useState("");
   const [unidadeId, setUnidadeId] = useState(unidadeIdParam || "");
+  const [foto, setFoto] = useState<string | null>(null);
+  const [mostrarAdicionais, setMostrarAdicionais] = useState(false);
+
+  // Controle de edição/atualização
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [membroId, setMembroId] = useState<string | null>(null);
   
   // Lista de membros para seleção de cônjuge
   const [membrosLista, setMembrosLista] = useState<Pick<Membro, 'id' | 'nome' | 'telefone'>[]>([]);
@@ -143,6 +150,59 @@ function CadastroMembroContent() {
         } else if (unidadesList.length === 1) {
           setUnidadeId(unidadesList[0].id);
           setUnidadeAtualNome(unidadesList[0].nome);
+        }
+
+        // Se veio o parâmetro membro, carrega as informações do membro para edição
+        const membroIdParam = searchParams.get("membro");
+        if (membroIdParam) {
+          const uId = unidadeIdParam || (unidadesList.length === 1 ? unidadesList[0].id : "");
+          if (uId) {
+            const memberRef = doc(db, "igrejas", igrejaId, "unidades", uId, "membros", membroIdParam);
+            const memberSnap = await getDoc(memberRef);
+            if (memberSnap.exists()) {
+              const data = memberSnap.data();
+              setMembroId(membroIdParam);
+              setIsEditMode(true);
+              setUnidadeId(uId);
+              setNome(data.nome || "");
+              setTelefone(data.telefone || "");
+              setEmail(data.email || "");
+              setSexo(data.sexo || "");
+              
+              if (data.dataNascimento) {
+                const date = data.dataNascimento.toDate();
+                const yyyy = date.getFullYear();
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const dd = String(date.getDate()).padStart(2, '0');
+                setDataNascimento(`${yyyy}-${mm}-${dd}`);
+              } else {
+                setDataNascimento("");
+              }
+              
+              setTipo(data.tipo || "congregado");
+              setCargo(data.cargo || "");
+              setCargoDescricao(data.cargoDescricao || "");
+              setBatizado(!!data.dataBatismo);
+              setFoto(data.fotoUrl || null);
+              setEstadoCivil(data.estadoCivil || "solteiro");
+              setObservacoes(data.observacoes || "");
+              
+              if (data.endereco) {
+                setCep(data.endereco.cep || "");
+                setLogradouro(data.endereco.logradouro || "");
+                setNumero(data.endereco.numero || "");
+                setComplemento(data.endereco.complemento || "");
+                setBairro(data.endereco.bairro || "");
+                setCidade(data.endereco.cidade || "");
+                setEstado(data.endereco.estado || "");
+              }
+              
+              if (data.coordenadas) {
+                setCoordenadas(data.coordenadas);
+              }
+              setMostrarAdicionais(true);
+            }
+          }
         }
       } catch (error) {
         console.error("Erro ao carregar igreja:", error);
@@ -325,6 +385,10 @@ function CadastroMembroContent() {
         unidadeId,
       };
 
+      if (foto) {
+        membroData.fotoUrl = foto;
+      }
+
       if (email.trim()) {
         membroData.email = email.trim().toLowerCase();
       }
@@ -383,15 +447,22 @@ function CadastroMembroContent() {
         membroData.coordenadas = coordenadas;
       }
 
-      // Primeiro cadastra o membro principal
-      const membroPrincipalRef = await addDoc(membrosRef, membroData);
+      // Primeiro cadastra ou atualiza o membro principal
+      let membroPrincipalRef;
+      if (isEditMode && membroId) {
+        const docRef = doc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", membroId);
+        await updateDoc(docRef, membroData as any);
+        membroPrincipalRef = { id: membroId };
+      } else {
+        membroPrincipalRef = await addDoc(membrosRef, membroData);
+      }
       
-      const { updateDoc, doc } = await import("firebase/firestore");
+      const { updateDoc: fbUpdateDoc, doc: fbDoc } = await import("firebase/firestore");
       
       // Se selecionou um cônjuge existente, atualiza ambos os registros
       if (temConjuge && conjugeEhMembro && conjugeIdSelecionado) {
         // Atualiza o cônjuge existente para vincular ao novo membro
-        await updateDoc(doc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", conjugeIdSelecionado), {
+        await fbUpdateDoc(fbDoc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", conjugeIdSelecionado), {
           conjugeId: membroPrincipalRef.id,
           nomeConjuge: nome.trim(),
         });
@@ -525,13 +596,40 @@ function CadastroMembroContent() {
           )}
         </div>
 
+        {isEditMode && (
+          <div className="flex items-center justify-between p-4 bg-primary/10 border border-primary/20 rounded-lg">
+            <span className="text-sm font-medium text-primary flex items-center gap-2 text-left">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>Atualizando cadastro de: <strong>{nome}</strong></span>
+            </span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Dados Pessoais */}
+          {/* Foto */}
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Camera className="h-5 w-5" />
+                Sua Foto
+              </CardTitle>
+              <CardDescription>Tire uma foto ou faça upload para seu cadastro</CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <FotoUpload
+                fotoUrl={foto || undefined}
+                nome={nome}
+                onFotoChange={setFoto}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Dados Pessoais Básicos */}
           <Card>
             <CardHeader className="pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <User className="h-5 w-5" />
-                Dados Pessoais
+                Dados Básicos
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -560,19 +658,6 @@ function CadastroMembroContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
                   <Label htmlFor="sexo">Sexo *</Label>
                   <Select value={sexo} onValueChange={(v) => setSexo(v as Sexo)}>
                     <SelectTrigger>
@@ -587,84 +672,7 @@ function CadastroMembroContent() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="dataNascimento">Data de Nascimento</Label>
-                  <Input
-                    id="dataNascimento"
-                    type="date"
-                    value={dataNascimento}
-                    onChange={(e) => setDataNascimento(e.target.value)}
-                  />
-                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="estadoCivil">Estado Civil *</Label>
-                <Select value={estadoCivil} onValueChange={(v) => setEstadoCivil(v as EstadoCivil)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(ESTADOS_CIVIS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tipo">Tipo de Membro *</Label>
-                <Select value={tipo} onValueChange={(v) => setTipo(v as TipoMembro)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(TIPOS_MEMBRO)
-                      .filter(([value]) => value !== "visitante") // Visitante tem formulário próprio
-                      .map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Campo de Cargo (aparece para Obreiro e Líder) */}
-              {(tipo === "obreiro" || tipo === "lider") && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="cargo">Cargo *</Label>
-                    <Select value={cargo} onValueChange={(v) => setCargo(v as CargoMembro)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o cargo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(CARGOS_MEMBRO).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {cargo === "outro" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="cargoDescricao">Descreva o cargo</Label>
-                      <Input
-                        id="cargoDescricao"
-                        value={cargoDescricao}
-                        onChange={(e) => setCargoDescricao(e.target.value)}
-                        placeholder="Qual é o cargo?"
-                      />
-                    </div>
-                  )}
-                </>
-              )}
 
               {/* Só mostra seleção de unidade se não veio no link E há mais de uma opção */}
               {!unidadeIdParam && unidades.length > 1 && (
@@ -684,373 +692,489 @@ function CadastroMembroContent() {
                   </Select>
                 </div>
               )}
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="batizado"
-                  checked={batizado}
-                  onCheckedChange={(checked) => setBatizado(!!checked)}
-                />
-                <Label htmlFor="batizado">Sou batizado nas águas</Label>
-              </div>
             </CardContent>
           </Card>
 
-          {/* Dados do Cônjuge - Aparece apenas se casado ou amasiado */}
-          {temConjuge && (
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Heart className="h-5 w-5" />
-                  Dados do Cônjuge
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="conjugeEhMembro"
-                    checked={conjugeEhMembro}
-                    onCheckedChange={(checked) => {
-                      setConjugeEhMembro(!!checked);
-                      if (!checked) {
-                        setConjugeIdSelecionado("");
-                        setAdicionarNovoConjuge(false);
-                      }
-                    }}
-                  />
-                  <Label htmlFor="conjugeEhMembro">Meu cônjuge também é membro da igreja</Label>
-                </div>
+          {/* Botão de Toggle para Campos Opcionais */}
+          <div className="py-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMostrarAdicionais(!mostrarAdicionais)}
+              className="w-full flex items-center justify-between text-sm h-11"
+            >
+              <span className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                {mostrarAdicionais ? "Ocultar campos adicionais" : "Preencher mais dados (Opcional - Endereço, Cônjuge, etc)"}
+              </span>
+              <span>{mostrarAdicionais ? "▲" : "▼"}</span>
+            </Button>
+          </div>
 
-                {conjugeEhMembro ? (
-                  <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
-                    {loadingMembros ? (
-                      <div className="flex items-center justify-center py-4">
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <span className="ml-2 text-sm text-muted-foreground">Carregando membros...</span>
+          {/* Campos Adicionais Opcionais */}
+          {mostrarAdicionais && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg">Outros Dados Pessoais</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="email">E-mail</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="seu@email.com"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="dataNascimento">Data de Nascimento</Label>
+                      <Input
+                        id="dataNascimento"
+                        type="date"
+                        value={dataNascimento}
+                        onChange={(e) => setDataNascimento(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="estadoCivil">Estado Civil</Label>
+                    <Select value={estadoCivil} onValueChange={(v) => setEstadoCivil(v as EstadoCivil)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(ESTADOS_CIVIS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="tipo">Tipo de Membro</Label>
+                    <Select value={tipo} onValueChange={(v) => setTipo(v as TipoMembro)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(TIPOS_MEMBRO)
+                          .filter(([value]) => value !== "visitante")
+                          .map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(tipo === "obreiro" || tipo === "lider") && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="cargo">Cargo *</Label>
+                        <Select value={cargo} onValueChange={(v) => setCargo(v as CargoMembro)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o cargo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(CARGOS_MEMBRO).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                    ) : (
-                      <>
-                        {!adicionarNovoConjuge ? (
-                          <>
-                            <div className="space-y-2">
-                              <Label htmlFor="conjugeSelecionado">Selecione seu cônjuge *</Label>
-                              <Select 
-                                value={conjugeIdSelecionado} 
-                                onValueChange={(v) => setConjugeIdSelecionado(v)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione na lista" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {membrosLista.map((m) => (
-                                    <SelectItem key={m.id} value={m.id}>
-                                      {m.nome}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setAdicionarNovoConjuge(true);
-                                  setConjugeIdSelecionado("");
-                                }}
-                              >
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Não encontrei, adicionar novo
-                              </Button>
-                            </div>
-                          </>
+
+                      {cargo === "outro" && (
+                        <div className="space-y-2">
+                          <Label htmlFor="cargoDescricao">Descreva o cargo</Label>
+                          <Input
+                            id="cargoDescricao"
+                            value={cargoDescricao}
+                            onChange={(e) => setCargoDescricao(e.target.value)}
+                            placeholder="Qual é o cargo?"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="batizado"
+                      checked={batizado}
+                      onCheckedChange={(checked) => setBatizado(!!checked)}
+                    />
+                    <Label htmlFor="batizado">Sou batizado nas águas</Label>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Dados do Cônjuge - Aparece apenas se casado ou amasiado */}
+              {temConjuge && (
+                <Card>
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Heart className="h-5 w-5" />
+                      Dados do Cônjuge
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="conjugeEhMembro"
+                        checked={conjugeEhMembro}
+                        onCheckedChange={(checked) => {
+                          setConjugeEhMembro(!!checked);
+                          if (!checked) {
+                            setConjugeIdSelecionado("");
+                            setAdicionarNovoConjuge(false);
+                          }
+                        }}
+                      />
+                      <Label htmlFor="conjugeEhMembro">Meu cônjuge também é membro da igreja</Label>
+                    </div>
+
+                    {conjugeEhMembro ? (
+                      <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
+                        {loadingMembros ? (
+                          <div className="flex items-center justify-center py-4">
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                            <span className="ml-2 text-sm text-muted-foreground">Carregando membros...</span>
+                          </div>
                         ) : (
                           <>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <UserPlus className="h-4 w-4" />
-                                <span>Cadastrar novo cônjuge</span>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setAdicionarNovoConjuge(false);
-                                  setNomeConjuge("");
-                                  setTelefoneConjuge("");
-                                  setEmailConjuge("");
-                                setDataNascimentoConjuge("");
-                                setSexoConjuge("");
-                                setTipoConjuge("membro");
-                                setCargoConjuge("");
-                                }}
-                              >
-                                <Search className="h-4 w-4 mr-2" />
-                                Voltar para lista
-                              </Button>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label htmlFor="nomeConjuge">Nome do Cônjuge *</Label>
-                              <Input
-                                id="nomeConjuge"
-                                value={nomeConjuge}
-                                onChange={(e) => setNomeConjuge(e.target.value)}
-                                placeholder="Nome completo do cônjuge"
-                              />
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="tipoConjuge">Tipo do Cônjuge *</Label>
-                                <Select value={tipoConjuge} onValueChange={(v) => setTipoConjuge(v as TipoMembro)}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Selecione" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Object.entries(TIPOS_MEMBRO).map(([value, label]) => (
-                                      <SelectItem key={value} value={value}>
-                                        {label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              {showCargoConjuge && (
+                            {!adicionarNovoConjuge ? (
+                              <>
                                 <div className="space-y-2">
-                                  <Label htmlFor="cargoConjuge">Cargo do Cônjuge *</Label>
-                                  <Select value={cargoConjuge} onValueChange={(v) => setCargoConjuge(v as CargoMembro)}>
+                                  <Label htmlFor="conjugeSelecionado">Selecione seu cônjuge *</Label>
+                                  <Select 
+                                    value={conjugeIdSelecionado} 
+                                    onValueChange={(v) => setConjugeIdSelecionado(v)}
+                                  >
                                     <SelectTrigger>
-                                      <SelectValue placeholder="Selecione" />
+                                      <SelectValue placeholder="Selecione na lista" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {Object.entries(CARGOS_MEMBRO).map(([value, label]) => (
-                                        <SelectItem key={value} value={value}>
-                                          {label}
+                                      {membrosLista.map((m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                          {m.nome}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                              )}
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="telefoneConjuge">WhatsApp do Cônjuge *</Label>
-                                <Input
-                                  id="telefoneConjuge"
-                                  value={telefoneConjuge}
-                                  onChange={(e) => setTelefoneConjuge(formatPhoneInput(e.target.value))}
-                                  placeholder="11999999999"
-                                  maxLength={11}
-                                />
-                              </div>
+                                
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setAdicionarNovoConjuge(true);
+                                      setConjugeIdSelecionado("");
+                                    }}
+                                  >
+                                    <UserPlus className="h-4 w-4 mr-2" />
+                                    Não encontrei, adicionar novo
+                                  </Button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <UserPlus className="h-4 w-4" />
+                                    <span>Cadastrar novo cônjuge</span>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setAdicionarNovoConjuge(false);
+                                      setNomeConjuge("");
+                                      setTelefoneConjuge("");
+                                      setEmailConjuge("");
+                                      setDataNascimentoConjuge("");
+                                      setSexoConjuge("");
+                                      setTipoConjuge("membro");
+                                      setCargoConjuge("");
+                                    }}
+                                  >
+                                    <Search className="h-4 w-4 mr-2" />
+                                    Voltar para lista
+                                  </Button>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="nomeConjuge">Nome do Cônjuge *</Label>
+                                  <Input
+                                    id="nomeConjuge"
+                                    value={nomeConjuge}
+                                    onChange={(e) => setNomeConjuge(e.target.value)}
+                                    placeholder="Nome completo do cônjuge"
+                                  />
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="tipoConjuge">Tipo do Cônjuge *</Label>
+                                    <Select value={tipoConjuge} onValueChange={(v) => setTipoConjuge(v as TipoMembro)}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Selecione" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {Object.entries(TIPOS_MEMBRO).map(([value, label]) => (
+                                          <SelectItem key={value} value={value}>
+                                            {label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
 
-                              <div className="space-y-2">
-                                <Label htmlFor="sexoConjuge">Sexo do Cônjuge *</Label>
-                                <Select value={sexoConjuge} onValueChange={(v) => setSexoConjuge(v as Sexo)}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Selecione" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Object.entries(SEXOS).map(([value, label]) => (
-                                      <SelectItem key={value} value={value}>
-                                        {label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
+                                  {showCargoConjuge && (
+                                    <div className="space-y-2">
+                                      <Label htmlFor="cargoConjuge">Cargo do Cônjuge *</Label>
+                                      <Select value={cargoConjuge} onValueChange={(v) => setCargoConjuge(v as CargoMembro)}>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Selecione" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {Object.entries(CARGOS_MEMBRO).map(([value, label]) => (
+                                            <SelectItem key={value} value={value}>
+                                              {label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="telefoneConjuge">WhatsApp do Cônjuge *</Label>
+                                    <Input
+                                      id="telefoneConjuge"
+                                      value={telefoneConjuge}
+                                      onChange={(e) => setTelefoneConjuge(formatPhoneInput(e.target.value))}
+                                      placeholder="11999999999"
+                                      maxLength={11}
+                                    />
+                                  </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="emailConjuge">E-mail do Cônjuge</Label>
-                                <Input
-                                  id="emailConjuge"
-                                  type="email"
-                                  value={emailConjuge}
-                                  onChange={(e) => setEmailConjuge(e.target.value)}
-                                  placeholder="email@exemplo.com"
-                                />
-                              </div>
-                              
-                              <div className="space-y-2">
-                                <Label htmlFor="dataNascimentoConjuge">Data de Nascimento</Label>
-                                <Input
-                                  id="dataNascimentoConjuge"
-                                  type="date"
-                                  value={dataNascimentoConjuge}
-                                  onChange={(e) => setDataNascimentoConjuge(e.target.value)}
-                                />
-                              </div>
-                            </div>
-                            
-                            <p className="text-xs text-muted-foreground">
-                              O endereço será o mesmo informado abaixo para ambos.
-                            </p>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="sexoConjuge">Sexo do Cônjuge *</Label>
+                                    <Select value={sexoConjuge} onValueChange={(v) => setSexoConjuge(v as Sexo)}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Selecione" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {Object.entries(SEXOS).map(([value, label]) => (
+                                          <SelectItem key={value} value={value}>
+                                            {label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="emailConjuge">E-mail do Cônjuge</Label>
+                                    <Input
+                                      id="emailConjuge"
+                                      type="email"
+                                      value={emailConjuge}
+                                      onChange={(e) => setEmailConjuge(e.target.value)}
+                                      placeholder="email@exemplo.com"
+                                    />
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <Label htmlFor="dataNascimentoConjuge">Data de Nascimento</Label>
+                                    <Input
+                                      id="dataNascimentoConjuge"
+                                      type="date"
+                                      value={dataNascimentoConjuge}
+                                      onChange={(e) => setDataNascimentoConjuge(e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                                
+                                <p className="text-xs text-muted-foreground">
+                                  O endereço será o mesmo informado abaixo para ambos.
+                                </p>
+                              </>
+                            )}
                           </>
                         )}
-                      </>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label htmlFor="nomeConjuge">Nome do Cônjuge *</Label>
+                        <Input
+                          id="nomeConjuge"
+                          value={nomeConjuge}
+                          onChange={(e) => setNomeConjuge(e.target.value)}
+                          placeholder="Nome completo do cônjuge"
+                          required
+                        />
+                      </div>
                     )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Endereço */}
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MapPin className="h-5 w-5" />
+                    Endereço
+                  </CardTitle>
+                  <CardDescription>Opcional, mas ajuda nos grupos por proximidade</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-2">
+                      <Label htmlFor="cep">CEP</Label>
+                      <Input
+                        id="cep"
+                        value={cep}
+                        onChange={(e) => setCep(formatCepInput(e.target.value))}
+                        placeholder="00000000"
+                        maxLength={8}
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="button" variant="outline" onClick={buscarCep}>
+                        Buscar
+                      </Button>
+                    </div>
                   </div>
-                ) : (
+
                   <div className="space-y-2">
-                    <Label htmlFor="nomeConjuge">Nome do Cônjuge *</Label>
+                    <Label htmlFor="logradouro">Logradouro</Label>
                     <Input
-                      id="nomeConjuge"
-                      value={nomeConjuge}
-                      onChange={(e) => setNomeConjuge(e.target.value)}
-                      placeholder="Nome completo do cônjuge"
-                      required
+                      id="logradouro"
+                      value={logradouro}
+                      onChange={(e) => setLogradouro(e.target.value)}
+                      placeholder="Rua, Avenida..."
                     />
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="numero">Número</Label>
+                      <Input
+                        id="numero"
+                        value={numero}
+                        onChange={(e) => setNumero(e.target.value)}
+                        placeholder="123"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="complemento">Complemento</Label>
+                      <Input
+                        id="complemento"
+                        value={complemento}
+                        onChange={(e) => setComplemento(e.target.value)}
+                        placeholder="Apto, Bloco..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bairro">Bairro</Label>
+                    <Input
+                      id="bairro"
+                      value={bairro}
+                      onChange={(e) => setBairro(e.target.value)}
+                      placeholder="Bairro"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="cidade">Cidade</Label>
+                      <Input
+                        id="cidade"
+                        value={cidade}
+                        onChange={(e) => setCidade(e.target.value)}
+                        placeholder="Cidade"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="estado">Estado</Label>
+                      <Input
+                        id="estado"
+                        value={estado}
+                        onChange={(e) => setEstado(e.target.value)}
+                        placeholder="SP"
+                        maxLength={2}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <div>
+                      <p className="text-sm font-medium">Localização no Mapa</p>
+                      <p className="text-xs text-muted-foreground">
+                        {coordenadas 
+                          ? "Localização encontrada" 
+                          : "Clique para localizar o endereço no mapa"}
+                      </p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant={coordenadas ? "outline" : "default"}
+                      onClick={localizarNoMapa}
+                      disabled={loadingGeo}
+                    >
+                      <MapPin className="mr-2 h-4 w-4" />
+                      {loadingGeo ? "Localizando..." : coordenadas ? "Localizado" : "Localizar no Mapa"}
+                    </Button>
+                  </div>
+
+                  {coordenadas && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Coordenadas: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Observações */}
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg">Observações</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Textarea
+                    placeholder="Alguma informação adicional?"
+                    value={observacoes}
+                    onChange={(e) => setObservacoes(e.target.value)}
+                    rows={3}
+                  />
+                </CardContent>
+              </Card>
+            </div>
           )}
-
-          {/* Endereço */}
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
-                Endereço
-              </CardTitle>
-              <CardDescription>Opcional, mas ajuda nos grupos por proximidade</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="cep">CEP</Label>
-                  <Input
-                    id="cep"
-                    value={cep}
-                    onChange={(e) => setCep(formatCepInput(e.target.value))}
-                    placeholder="00000000"
-                    maxLength={8}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button type="button" variant="outline" onClick={buscarCep}>
-                    Buscar
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="logradouro">Logradouro</Label>
-                <Input
-                  id="logradouro"
-                  value={logradouro}
-                  onChange={(e) => setLogradouro(e.target.value)}
-                  placeholder="Rua, Avenida..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="numero">Número</Label>
-                  <Input
-                    id="numero"
-                    value={numero}
-                    onChange={(e) => setNumero(e.target.value)}
-                    placeholder="123"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="complemento">Complemento</Label>
-                  <Input
-                    id="complemento"
-                    value={complemento}
-                    onChange={(e) => setComplemento(e.target.value)}
-                    placeholder="Apto, Bloco..."
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="bairro">Bairro</Label>
-                <Input
-                  id="bairro"
-                  value={bairro}
-                  onChange={(e) => setBairro(e.target.value)}
-                  placeholder="Bairro"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="cidade">Cidade</Label>
-                  <Input
-                    id="cidade"
-                    value={cidade}
-                    onChange={(e) => setCidade(e.target.value)}
-                    placeholder="Cidade"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="estado">Estado</Label>
-                  <Input
-                    id="estado"
-                    value={estado}
-                    onChange={(e) => setEstado(e.target.value)}
-                    placeholder="SP"
-                    maxLength={2}
-                  />
-                </div>
-              </div>
-
-              {/* Botão Localizar no Mapa */}
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <p className="text-sm font-medium">Localização no Mapa</p>
-                  <p className="text-xs text-muted-foreground">
-                    {coordenadas 
-                      ? "Localização encontrada" 
-                      : "Clique para localizar o endereço no mapa"}
-                  </p>
-                </div>
-                <Button 
-                  type="button" 
-                  variant={coordenadas ? "outline" : "default"}
-                  onClick={localizarNoMapa}
-                  disabled={loadingGeo}
-                >
-                  <MapPin className="mr-2 h-4 w-4" />
-                  {loadingGeo ? "Localizando..." : coordenadas ? "Localizado" : "Localizar no Mapa"}
-                </Button>
-              </div>
-
-              {coordenadas && (
-                <p className="text-xs text-muted-foreground text-center">
-                  Coordenadas: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Observações */}
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg">Observações</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                placeholder="Alguma informação adicional?"
-                value={observacoes}
-                onChange={(e) => setObservacoes(e.target.value)}
-                rows={3}
-              />
-            </CardContent>
-          </Card>
 
           <Button type="submit" className="w-full" size="lg" disabled={loading}>
             {loading ? "Enviando..." : "Enviar Cadastro"}
