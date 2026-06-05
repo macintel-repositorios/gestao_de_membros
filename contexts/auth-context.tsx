@@ -101,7 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let unsubscribeUser: (() => void) | null = null;
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubscribeUser) {
+        unsubscribeUser();
+        unsubscribeUser = null;
+      }
+
       setUser(firebaseUser);
 
       if (firebaseUser) {
@@ -122,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setLoading(false);
           
           // Configura listener para mudanças
-          const unsubscribeUser = onSnapshot(userDocRefOld, (docSnap) => {
+          unsubscribeUser = onSnapshot(userDocRefOld, (docSnap) => {
             if (docSnap.exists()) {
               const userData = { uid: docSnap.id, ...docSnap.data() } as Usuario;
               setUsuario(userData);
@@ -132,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           });
           
-          return () => unsubscribeUser();
+          return;
         }
         
         // Se não encontrou na raiz, usuário não configurado corretamente
@@ -153,7 +160,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUser) {
+        unsubscribeUser();
+      }
+    };
   }, []);
 
   const signOut = async () => {
