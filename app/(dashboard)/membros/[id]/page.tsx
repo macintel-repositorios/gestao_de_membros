@@ -110,8 +110,7 @@ export default function MembroDetalhesPage() {
         const acompRef = getAcompanhamentosCollection(igrejaId, membroUnidadeId);
         const acompQuery = query(
           acompRef,
-          where("membroId", "==", params.id),
-          orderBy("data", "desc")
+          where("membroId", "==", params.id)
         );
         
         const snapshot = await getDocs(acompQuery);
@@ -119,6 +118,10 @@ export default function MembroDetalhesPage() {
         snapshot.forEach((docSnap) => {
           data.push({ id: docSnap.id, unidadeId: membroUnidadeId, ...docSnap.data() } as unknown as Acompanhamento);
         });
+
+        // Ordena por data decrescente no cliente para evitar a necessidade de criar um índice composto no Firestore
+        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+
         setAcompanhamentos(data);
       } catch (error) {
         console.error("Erro ao carregar acompanhamentos:", error);
