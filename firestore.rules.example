@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Usuarios ficam na raiz - cada usuario tem um igrejaId
+    match /usuarios/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Regra principal: tudo dentro de /igrejas/{igrejaId} so pode ser acessado
+    // por usuarios que pertencem a essa igreja
+    match /igrejas/{igrejaId} {
+      // Funcao helper para verificar se o usuario pertence a igreja
+      function userBelongsToChurch() {
+        return request.auth != null 
+          && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+          && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.igrejaId == igrejaId;
+      }
+      
+      // Dados da igreja
+      allow read: if userBelongsToChurch();
+      allow write: if userBelongsToChurch() 
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nivelAcesso == "admin";
+      
+      // Membros
+      match /membros/{membroId} {
+        allow read: if userBelongsToChurch();
+        allow create: if userBelongsToChurch();
+        allow update, delete: if userBelongsToChurch()
+          && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nivelAcesso in ["admin", "lider"];
+      }
+      
+      // Grupos
+      match /grupos/{grupoId} {
+        allow read: if userBelongsToChurch();
+        allow create: if userBelongsToChurch();
+        allow update, delete: if userBelongsToChurch()
+          && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nivelAcesso in ["admin", "lider"];
+      }
+      
+      // Acompanhamentos
+      match /acompanhamentos/{acompId} {
+        allow read: if userBelongsToChurch();
+        allow create: if userBelongsToChurch()
+          && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nivelAcesso in ["admin", "lider", "obreiro"];
+        allow update, delete: if userBelongsToChurch()
+          && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nivelAcesso == "admin";
+      }
+    }
+  }
+}

@@ -1,0 +1,320 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { query, orderBy, getDocs, limit } from "firebase/firestore";
+import { getAcompanhamentosCollection } from "@/lib/firestore";
+import { useAuth } from "@/contexts/auth-context";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Plus,
+  Search,
+  Home,
+  Hospital,
+  BookOpen,
+  MessageCircle,
+  Calendar,
+  User,
+  ChevronRight,
+  HeartHandshake,
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  Acompanhamento,
+  TipoAcompanhamento,
+  TIPOS_ACOMPANHAMENTO,
+  CORES_ACOMPANHAMENTO,
+  CORES_TIPO,
+} from "@/lib/types";
+
+const ICONES_ACOMPANHAMENTO: Record<TipoAcompanhamento, React.ComponentType<{ className?: string; color?: string }>> = {
+  visita_residencial: Home,
+  visita_hospitalar: Hospital,
+  culto_no_lar: BookOpen,
+  aconselhamento: MessageCircle,
+};
+
+export default function AcompanhamentoPage() {
+  const { usuario, igrejaId, unidadesAcessiveis } = useAuth();
+  const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterTipo, setFilterTipo] = useState<TipoAcompanhamento | "todos">("todos");
+
+  const canCreate = usuario?.nivelAcesso === "full" || 
+                    usuario?.nivelAcesso === "admin" || 
+                    usuario?.nivelAcesso === "user";
+
+  useEffect(() => {
+    if (!igrejaId || unidadesAcessiveis.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    const loadAcompanhamentos = async () => {
+      try {
+        const data: Acompanhamento[] = [];
+        
+        for (const unidadeId of unidadesAcessiveis) {
+          const acompRef = getAcompanhamentosCollection(igrejaId, unidadeId);
+          const q = query(acompRef, orderBy("data", "desc"), limit(50));
+          const snapshot = await getDocs(q);
+          snapshot.forEach((docSnap) => {
+            data.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
+          });
+        }
+        
+        // Sort by date descending
+        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+        
+        setAcompanhamentos(data);
+      } catch (error) {
+        console.error("Erro ao carregar acompanhamentos:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAcompanhamentos();
+  }, [igrejaId, unidadesAcessiveis]);
+
+  const filteredAcompanhamentos = acompanhamentos.filter((acomp) => {
+    const matchesSearch =
+      acomp.membroNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      acomp.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      acomp.responsavelNome.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesTipo = filterTipo === "todos" || acomp.tipo === filterTipo;
+
+    return matchesSearch && matchesTipo;
+  });
+
+  // Group by date
+  const groupedByDate = filteredAcompanhamentos.reduce((acc, acomp) => {
+    const dateKey = format(acomp.data.toDate(), "yyyy-MM-dd");
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(acomp);
+    return acc;
+  }, {} as Record<string, Acompanhamento[]>);
+
+  const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Acompanhamento Pastoral</h1>
+          <p className="text-muted-foreground">
+            Registre e acompanhe visitas, cultos no lar e aconselhamentos
+          </p>
+        </div>
+        {canCreate && (
+          <Button asChild>
+            <Link href="/acompanhamento/novo">
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Registro
+            </Link>
+          </Button>
+        )}
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {(Object.keys(TIPOS_ACOMPANHAMENTO) as TipoAcompanhamento[]).map((tipo) => {
+          const Icon = ICONES_ACOMPANHAMENTO[tipo];
+          const count = acompanhamentos.filter((a) => a.tipo === tipo).length;
+          return (
+            <Card key={tipo}>
+              <CardContent className="flex items-center gap-4 p-4">
+                <div
+                  className="flex h-12 w-12 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: `${CORES_ACOMPANHAMENTO[tipo]}20` }}
+                >
+                  <Icon className="h-6 w-6" color={CORES_ACOMPANHAMENTO[tipo]} />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{loading ? "-" : count}</p>
+                  <p className="text-sm text-muted-foreground">{TIPOS_ACOMPANHAMENTO[tipo]}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por membro, descrição ou responsável..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select
+            value={filterTipo}
+            onValueChange={(v) => setFilterTipo(v as TipoAcompanhamento | "todos")}
+          >
+            <SelectTrigger className="w-full sm:w-52">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os tipos</SelectItem>
+              {(Object.keys(TIPOS_ACOMPANHAMENTO) as TipoAcompanhamento[]).map((tipo) => (
+                <SelectItem key={tipo} value={tipo}>
+                  {TIPOS_ACOMPANHAMENTO[tipo]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* List */}
+      {loading ? (
+        <Card>
+          <CardContent className="p-4">
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-12 w-12 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : filteredAcompanhamentos.length === 0 ? (
+        <Card>
+          <CardContent className="p-12">
+            <Empty>
+              <EmptyMedia variant="icon">
+                <HeartHandshake className="h-10 w-10" />
+              </EmptyMedia>
+              <EmptyTitle>
+                {acompanhamentos.length === 0
+                  ? "Nenhum acompanhamento registrado"
+                  : "Nenhum resultado encontrado"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {acompanhamentos.length === 0
+                  ? "Comece registrando uma visita ou culto no lar."
+                  : "Tente ajustar os filtros de busca."}
+              </EmptyDescription>
+              {acompanhamentos.length === 0 && canCreate && (
+                <Button asChild className="mt-4">
+                  <Link href="/acompanhamento/novo">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Novo Registro
+                  </Link>
+                </Button>
+              )}
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {sortedDates.map((dateKey) => {
+            const dateAcompanhamentos = groupedByDate[dateKey];
+            const date = new Date(dateKey + "T12:00:00");
+            const isToday = format(new Date(), "yyyy-MM-dd") === dateKey;
+            const isYesterday = format(new Date(Date.now() - 86400000), "yyyy-MM-dd") === dateKey;
+
+            return (
+              <div key={dateKey}>
+                <div className="mb-3 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-medium">
+                    {isToday
+                      ? "Hoje"
+                      : isYesterday
+                      ? "Ontem"
+                      : format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                  </h3>
+                  <Badge variant="secondary" className="text-xs">
+                    {dateAcompanhamentos.length}
+                  </Badge>
+                </div>
+                <Card>
+                  <CardContent className="divide-y p-0">
+                    {dateAcompanhamentos.map((acomp) => {
+                      const Icon = ICONES_ACOMPANHAMENTO[acomp.tipo];
+                      return (
+                        <Link
+                          key={acomp.id}
+                          href={`/acompanhamento/${acomp.id}`}
+                          className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50"
+                        >
+                          <div className="relative">
+                            <Avatar className="h-12 w-12">
+                              <AvatarImage src={acomp.membroFotoUrl || undefined} alt={acomp.membroNome} />
+                              <AvatarFallback>
+                                {acomp.membroNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div
+                              className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                              style={{ backgroundColor: CORES_ACOMPANHAMENTO[acomp.tipo] }}
+                            >
+                              <Icon className="h-3 w-3" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium truncate">{acomp.membroNome}</p>
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 text-xs"
+                                style={{
+                                  borderColor: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                  color: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                }}
+                              >
+                                {TIPOS_ACOMPANHAMENTO[acomp.tipo]}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground truncate">
+                              {acomp.descricao}
+                            </p>
+                            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                              <User className="h-3 w-3" />
+                              <span>{acomp.responsavelNome}</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                        </Link>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
