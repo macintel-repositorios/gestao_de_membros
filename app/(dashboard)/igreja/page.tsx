@@ -555,14 +555,6 @@ export default function GerenciarIgrejasPage() {
                     <div className="border-t pt-4">
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="text-sm font-medium text-muted-foreground">Estrutura Hierárquica</h4>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => abrirModalNovaUnidade(igreja.id, "sede")}
-                        >
-                          <Plus className="mr-2 h-3.5 w-3.5" />
-                          Nova Sede
-                        </Button>
                       </div>
 
                       {igreja.unidades.length === 0 ? (
