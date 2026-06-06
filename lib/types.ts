@@ -127,6 +127,12 @@ export interface Unidade {
   ativa: boolean;
   dataCriacao: Timestamp;
   fotoUrl?: string;
+  // Campos adicionais herdados de Igreja
+  codIgreja?: string;
+  convencao?: string;
+  ministerio?: string;
+  email?: string;
+  cnpj?: string;
   // Campos de Regional / Setor
   ehHospedeira?: boolean;
   hospedaRegionalId?: string | null;

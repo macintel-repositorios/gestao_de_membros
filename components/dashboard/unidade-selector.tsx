@@ -46,8 +46,8 @@ export function UnidadeSelector() {
   }
 
   const displayName = visualizandoTodas 
-    ? "Todas as unidades" 
-    : unidadeSelecionada?.nome || "Selecione uma unidade";
+    ? "Todas as igrejas" 
+    : unidadeSelecionada?.nome || "Selecionar igreja";
 
   const displayTipo = visualizandoTodas 
     ? null 
@@ -76,7 +76,7 @@ export function UnidadeSelector() {
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64" align="start">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Marco Zero - Unidade Ativa
+          Marco Zero - Igreja Ativa
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
@@ -85,7 +85,7 @@ export function UnidadeSelector() {
           <>
             <DropdownMenuItem onClick={handleSelectTodas} className="gap-2">
               <Layers className="h-4 w-4 text-muted-foreground" />
-              <span>Todas as unidades</span>
+              <span>Todas as igrejas</span>
               {visualizandoTodas && <Check className="ml-auto h-4 w-4" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />

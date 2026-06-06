@@ -106,6 +106,7 @@ export default function GerenciarIgrejasPage() {
   const [isNovaUnidadeOpen, setIsNovaUnidadeOpen] = useState(false);
   const [novaUnidadeDefaults, setNovaUnidadeDefaults] = useState<{ tipo?: TipoUnidade; unidadePaiId?: string }>({});
   const [unidadeParaEditarId, setUnidadeParaEditarId] = useState<string | null>(null);
+  const [parentIgrejaId, setParentIgrejaId] = useState<string | null>(null);
 
   // Checks user permission
   const isAdmin = nivelAcesso === "admin" || nivelAcesso === "full";
@@ -334,7 +335,10 @@ export default function GerenciarIgrejasPage() {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setUnidadeParaEditarId(unidade.id)}>
+             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+              setParentIgrejaId(igrejaId);
+              setUnidadeParaEditarId(unidade.id);
+            }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button 
@@ -632,9 +636,9 @@ export default function GerenciarIgrejasPage() {
       <Sheet open={isNovaUnidadeOpen} onOpenChange={setIsNovaUnidadeOpen}>
         <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
           <SheetHeader className="mb-6">
-            <SheetTitle>Nova Unidade</SheetTitle>
+            <SheetTitle>Nova Congregação / Subcongregação</SheetTitle>
             <SheetDescription>
-              Adicione uma nova unidade à hierarquia da igreja
+              Adicione uma nova congregação/subcongregação à hierarquia
             </SheetDescription>
           </SheetHeader>
           <UnidadeForm
@@ -650,23 +654,33 @@ export default function GerenciarIgrejasPage() {
       </Sheet>
 
       {/* Drawer: Editar Unidade */}
-      <Sheet open={!!unidadeParaEditarId} onOpenChange={(open) => !open && setUnidadeParaEditarId(null)}>
+      <Sheet open={!!unidadeParaEditarId} onOpenChange={(open) => {
+        if (!open) {
+          setUnidadeParaEditarId(null);
+          setParentIgrejaId(null);
+        }
+      }}>
         <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
           {unidadeParaEditarId && (
             <>
               <SheetHeader className="mb-6">
-                <SheetTitle>Editar Unidade</SheetTitle>
+                <SheetTitle>Editar Congregação / Subcongregação</SheetTitle>
                 <SheetDescription>
-                  Atualize os dados da unidade
+                  Atualize os dados da congregação/subcongregação
                 </SheetDescription>
               </SheetHeader>
-              <UnidadeForm
+              <IgrejaForm
                 unidadeId={unidadeParaEditarId}
+                parentIgrejaId={parentIgrejaId || undefined}
                 onSuccess={() => {
                   setUnidadeParaEditarId(null);
+                  setParentIgrejaId(null);
                   loadIgrejasComHierarquia();
                 }}
-                onCancel={() => setUnidadeParaEditarId(null)}
+                onCancel={() => {
+                  setUnidadeParaEditarId(null);
+                  setParentIgrejaId(null);
+                }}
               />
             </>
           )}
@@ -700,9 +714,9 @@ export default function GerenciarIgrejasPage() {
       <AlertDialog open={!!deleteUnidadeId} onOpenChange={() => setDeleteUnidadeId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir Unidade</AlertDialogTitle>
+            <AlertDialogTitle>Excluir Congregação / Subcongregação</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir esta unidade? Esta ação não pode ser desfeita
+              Tem certeza que deseja excluir esta congregação/subcongregação? Esta ação não pode ser desfeita
               e todos os membros associados serão perdidos.
             </AlertDialogDescription>
           </AlertDialogHeader>

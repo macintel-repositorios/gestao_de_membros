@@ -227,7 +227,7 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
   }
 
   // Sede é sempre Regional 1
-  const isSedeRegional1 = regionalId && tipo === "regional" && numero === 1;
+  const isSedeRegional1 = !!(regionalId && tipo === "regional" && numero === 1);
 
   // Filtra as igrejas que podem ser selecionadas como membros (não podem ser hospedeiras de outra regional)
   const igrejasDisponiveisComoMembros = todasIgrejas.filter(
