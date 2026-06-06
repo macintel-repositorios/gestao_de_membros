@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { addDoc, Timestamp, getDocs } from "firebase/firestore";
+import { addDoc, Timestamp, getDocs, doc, setDoc, updateDoc, collection, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { getIgrejasCollection } from "@/lib/firestore";
 import { useAuth } from "@/contexts/auth-context";
 import { Igreja, TipoIgreja, TIPOS_IGREJA, Endereco } from "@/lib/types";
@@ -40,6 +41,8 @@ export default function NovaIgrejaPage() {
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
   const [cnpj, setCnpj] = useState("");
+  const [adminNome, setAdminNome] = useState("");
+  const [adminTelefone, setAdminTelefone] = useState("");
 
   // Endereço
   const [cep, setCep] = useState("");
@@ -135,8 +138,42 @@ export default function NovaIgrejaPage() {
       return;
     }
 
+    if (!adminNome.trim() || !adminTelefone.trim()) {
+      toast({
+        title: "Erro",
+        description: "O nome e telefone do administrador são obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
+    if (adminPhoneDigits.length < 10) {
+      toast({
+        title: "Erro",
+        description: "Telefone do administrador inválido.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
+      // 1. Verifica se já existe usuário com este telefone
+      const usuariosRef = collection(db!, "usuarios");
+      const q = query(usuariosRef, where("telefone", "==", adminTelefone));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        toast({
+          title: "Erro",
+          description: "Já existe um usuário com este telefone.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const endereco: Endereco = {
         cep: cep.replace(/\D/g, ""),
         logradouro,
@@ -166,11 +203,68 @@ export default function NovaIgrejaPage() {
       };
 
       const igrejasRef = getIgrejasCollection();
-      await addDoc(igrejasRef, igrejaData);
+      const docAddedRef = await addDoc(igrejasRef, igrejaData);
+      const newIgrejaId = docAddedRef.id;
+
+      // 2. Cria a unidade Sede para esta nova igreja
+      const unidadesCollectionRef = collection(db!, "igrejas", newIgrejaId, "unidades");
+      const novaUnidadeSedeRef = await addDoc(unidadesCollectionRef, {
+        nome: "Sede - " + nome.trim(),
+        tipo: "sede",
+        dataCriacao: Timestamp.now(),
+        ativa: true,
+        dirigente: dirigente.trim() || null,
+        telefone: telefone.replace(/\D/g, "") || null,
+        endereco: logradouro ? {
+          logradouro,
+          numero,
+          complemento,
+          bairro,
+          cidade,
+          estado,
+          cep: cep.replace(/\D/g, "")
+        } : null
+      });
+      const newUnidadeId = novaUnidadeSedeRef.id;
+
+      // 3. Cria a Regional 1 correspondente
+      const regCollectionRef = collection(db!, "igrejas", newIgrejaId, "regionais_setores");
+      const regDocRef = await addDoc(regCollectionRef, {
+        tipo: "regional",
+        numero: 1,
+        nome: "Regional 1",
+        hospedeiraId: newUnidadeId,
+        dirigente: dirigente.trim() || null,
+        igrejasMembrosIds: [],
+        dataCriacao: Timestamp.now(),
+      });
+      const newRegId = regDocRef.id;
+
+      // Vincula a regional/setor de volta à Sede
+      const sedeRef = doc(db!, "igrejas", newIgrejaId, "unidades", newUnidadeId);
+      await updateDoc(sedeRef, {
+        ehHospedeira: true,
+        hospedaRegionalId: newRegId,
+        regionalSetorId: newRegId,
+      });
+
+      // 4. Cria o usuário administrador
+      const adminUserId = `+55${adminPhoneDigits}`;
+      const userRef = doc(db!, "usuarios", adminUserId);
+      await setDoc(userRef, {
+        telefone: adminTelefone,
+        nome: adminNome.trim(),
+        nivelAcesso: "admin",
+        igrejaId: newIgrejaId,
+        unidadeId: newUnidadeId,
+        ativo: true,
+        dataCriacao: Timestamp.now(),
+        criadoPor: usuario?.uid || null,
+      });
 
       toast({
         title: "Igreja cadastrada",
-        description: "A igreja foi cadastrada com sucesso.",
+        description: "A igreja, sede, regional e o usuário administrador foram criados com sucesso.",
       });
 
       router.push("/igrejas");
@@ -344,6 +438,43 @@ export default function NovaIgrejaPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="contato@igreja.com"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Administrador da Igreja */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Administrador da Igreja</CardTitle>
+            <CardDescription>
+              Dados do usuário que terá acesso administrativo (Acesso Admin)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="adminNome">Nome do Administrador *</Label>
+                <Input
+                  id="adminNome"
+                  value={adminNome}
+                  onChange={(e) => setAdminNome(e.target.value)}
+                  placeholder="Nome do pastor ou administrador"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminTelefone">Telefone do Administrador (WhatsApp) *</Label>
+                <Input
+                  id="adminTelefone"
+                  value={adminTelefone}
+                  onChange={(e) => setAdminTelefone(formatTelefone(e.target.value))}
+                  placeholder="(00) 00000-0000"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Este número será usado para fazer login no sistema via SMS.
+                </p>
               </div>
             </div>
           </CardContent>
