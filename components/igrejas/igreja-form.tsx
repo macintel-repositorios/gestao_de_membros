@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Save, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { FotoUpload } from "@/components/membros/foto-upload";
 
 interface IgrejaFormProps {
   igrejaId?: string;
@@ -54,6 +55,7 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
+  const [fotoBase64, setFotoBase64] = useState<string | null>(null);
 
   useEffect(() => {
     loadIgrejasExistentes();
@@ -90,6 +92,7 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
         setBairro(data.endereco?.bairro || "");
         setCidade(data.endereco?.cidade || "");
         setEstado(data.endereco?.estado || "");
+        setFotoBase64(data.fotoUrl || null);
       }
     } catch (error) {
       console.error("Erro ao carregar igreja:", error);
@@ -192,6 +195,7 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
         telefone: telefone.replace(/\D/g, "") || null,
         email: email.trim().toLowerCase() || null,
         cnpj: cnpj.replace(/\D/g, "") || null,
+        fotoUrl: fotoBase64 || null,
         endereco,
         ativa: true,
         atualizadoPor: usuario?.uid || null,
@@ -225,6 +229,21 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 pt-2">
+      {/* Logo da Igreja */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Logo da Igreja</CardTitle>
+          <CardDescription>Envie o logotipo ou foto identificativa da igreja</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center">
+          <FotoUpload
+            fotoUrl={fotoBase64 || undefined}
+            nome={nome}
+            onFotoChange={setFotoBase64}
+          />
+        </CardContent>
+      </Card>
+
       {/* Dados Principais */}
       <Card>
         <CardHeader>

@@ -83,6 +83,7 @@ import {
   MessageCircle,
   HeartHandshake,
   User,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -101,6 +102,7 @@ import {
 } from "@/lib/types";
 import { QRCodeModal } from "@/components/qr-code-modal";
 import { useUnidadeSelecionada } from "@/contexts/unidade-selecionada-context";
+import { CartaoMembroModal } from "@/components/membros/cartao-membro-modal";
 
 // Membro com unidadeId para rastreamento
 interface MembroComUnidade extends Membro {
@@ -128,6 +130,7 @@ export default function MembrosPage() {
   // Estados para Drawer/Sheet
   const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade | null>(null);
   const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade | null>(null);
+  const [membroParaCartao, setMembroParaCartao] = useState<MembroComUnidade | null>(null);
   const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
   const [loadingAcomp, setLoadingAcomp] = useState(false);
 
@@ -518,14 +521,20 @@ export default function MembrosPage() {
                             <span className="sr-only">Ações</span>
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => setMembroParaVisualizar(membro)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Visualizar
-                          </DropdownMenuItem>
-                          {canEdit && (
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => setMembroParaVisualizar(membro)}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              Visualizar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setMembroParaCartao(membro)}
+                            >
+                              <CreditCard className="mr-2 h-4 w-4" />
+                              Gerar Cartão
+                            </DropdownMenuItem>
+                            {canEdit && (
                             <>
                               <DropdownMenuItem
                                 onClick={() => setMembroParaEditar(membro)}
@@ -675,18 +684,19 @@ export default function MembrosPage() {
                   <p className="text-xs text-muted-foreground">
                     CEP: {formatCep(membroParaVisualizar.endereco?.cep || "")}
                   </p>
-                  {membroParaVisualizar.coordenadas && (
-                    <div className="pt-2 flex gap-2">
-                      <Button variant="outline" size="sm" asChild className="w-full">
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${membroParaVisualizar.coordenadas.lat},${membroParaVisualizar.coordenadas.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <MapPin className="mr-1.5 h-3.5 w-3.5" />
-                          Traçar Rota
-                        </a>
-                      </Button>
+                    <div className="pt-2 flex flex-col gap-2 sm:flex-row">
+                      {membroParaVisualizar.coordenadas && (
+                        <Button variant="outline" size="sm" asChild className="w-full">
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${membroParaVisualizar.coordenadas.lat},${membroParaVisualizar.coordenadas.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                            Traçar Rota
+                          </a>
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" asChild className="w-full">
                         <a
                           href={`https://wa.me/55${membroParaVisualizar.telefone}`}
@@ -697,8 +707,16 @@ export default function MembrosPage() {
                           WhatsApp
                         </a>
                       </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setMembroParaCartao(membroParaVisualizar)}
+                        className="w-full"
+                      >
+                        <CreditCard className="mr-1.5 h-3.5 w-3.5" />
+                        Gerar Cartão
+                      </Button>
                     </div>
-                  )}
                 </div>
               </div>
 
@@ -816,6 +834,14 @@ export default function MembrosPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {membroParaCartao && (
+        <CartaoMembroModal
+          membro={membroParaCartao}
+          open={!!membroParaCartao}
+          onOpenChange={(open) => !open && setMembroParaCartao(null)}
+        />
+      )}
     </div>
   );
 }

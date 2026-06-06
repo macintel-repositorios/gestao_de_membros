@@ -155,7 +155,7 @@ export function IgrejaView({ igreja, onEdit }: IgrejaViewProps) {
           {/* Photo and Name */}
           <div className="flex flex-col items-center gap-4 sm:flex-row">
             <Avatar className="h-24 w-24 border-4 border-background shadow-lg">
-              <AvatarImage src={igreja.fotoUrl} alt={igreja.nome} />
+              <AvatarImage src={igreja.fotoUrl || "/default-church-logo.png"} alt={igreja.nome} />
               <AvatarFallback className="bg-teal-100 text-teal-700 text-2xl">
                 <Church className="h-10 w-10" />
               </AvatarFallback>

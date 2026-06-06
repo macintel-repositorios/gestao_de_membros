@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { Building2, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { FotoUpload } from "@/components/membros/foto-upload";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +68,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
       cep: "",
     },
   });
+  const [fotoBase64, setFotoBase64] = useState<string | null>(null);
 
   const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
 
@@ -100,6 +102,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
               cep: "",
             },
           });
+          setFotoBase64(data.fotoUrl || null);
         } else {
           toast.error("Unidade não encontrada");
         }
@@ -199,6 +202,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           dirigente: formData.dirigente || null,
           telefone: formData.telefone || null,
           endereco: formData.endereco.logradouro ? formData.endereco : null,
+          fotoUrl: fotoBase64 || null,
           dataAtualizacao: Timestamp.now(),
         });
         toast.success("Unidade atualizada com sucesso!");
@@ -210,6 +214,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           dirigente: formData.dirigente || null,
           telefone: formData.telefone || null,
           endereco: formData.endereco.logradouro ? formData.endereco : null,
+          fotoUrl: fotoBase64 || null,
           ativa: true,
           dataCriacao: Timestamp.now(),
         });
@@ -254,6 +259,21 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 pt-2">
+      {/* Logo da Unidade */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Logo / Imagem da Unidade</CardTitle>
+          <CardDescription>Envie o logotipo ou foto identificativa desta unidade</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center">
+          <FotoUpload
+            fotoUrl={fotoBase64 || undefined}
+            nome={formData.nome}
+            onFotoChange={setFotoBase64}
+          />
+        </CardContent>
+      </Card>
+
       {unidadeId && canManage && (
         <div className="flex justify-end">
           <AlertDialog>
