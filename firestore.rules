@@ -29,8 +29,8 @@ service cloud.firestore {
 
     // Coleção raiz de usuários
     match /usuarios/{userId} {
-      // Usuário pode ler/escrever seu próprio documento
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Usuário pode ler/escrever seu próprio documento (pelo UID ou pelo telefone de login)
+      allow read, write: if request.auth != null && (request.auth.uid == userId || request.auth.token.phone_number == userId);
       
       // Administrador da mesma igreja pode ler/escrever outros usuários da mesma igreja
       allow read, write: if request.auth != null 
