@@ -70,6 +70,8 @@ export default function SetupIgrejaPage() {
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
+  const [adminNome, setAdminNome] = useState("");
+  const [adminTelefone, setAdminTelefone] = useState("");
   
   // Hierarquia - Igrejas (Sedes) existentes
   const [igrejasExistentes, setIgrejasExistentes] = useState<IgrejaExistente[]>([]);
@@ -370,6 +372,17 @@ export default function SetupIgrejaPage() {
       return;
     }
 
+    if (!adminNome.trim() || !adminTelefone.trim()) {
+      setError("Nome e telefone do administrador são obrigatórios");
+      return;
+    }
+
+    const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
+    if (adminPhoneDigits.length < 10) {
+      setError("Telefone do administrador inválido");
+      return;
+    }
+
     const currentUser = auth.currentUser;
     if (!currentUser) {
       setError("Usuário não autenticado");
@@ -549,6 +562,25 @@ export default function SetupIgrejaPage() {
         nivelAcesso: tipo === "sede" ? "full" : "admin",
         dataAtualizacao: Timestamp.now(),
       }, { merge: true });
+
+      // Cadastra o Administrador do Sistema se os campos forem preenchidos
+      if (adminNome.trim() && adminTelefone.trim()) {
+        const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
+        if (adminPhoneDigits.length >= 10) {
+          const adminUserId = `+55${adminPhoneDigits}`;
+          const adminUserRef = doc(db, "usuarios", adminUserId);
+          await setDoc(adminUserRef, {
+            nome: adminNome.trim(),
+            telefone: adminTelefone.trim(),
+            nivelAcesso: "admin",
+            igrejaId: finalIgrejaId,
+            unidadeId: finalUnidadeId,
+            ativo: true,
+            dataCriacao: Timestamp.now(),
+            criadoPor: currentUser.uid,
+          });
+        }
+      }
 
       toast.success("Cadastro realizado com sucesso!");
       window.location.href = "/";
@@ -1000,6 +1032,35 @@ export default function SetupIgrejaPage() {
               </Field>
             </div>
           </FieldGroup>
+
+          {/* ========== ADMINISTRADOR DO SISTEMA ========== */}
+          <div className="border-t pt-6 space-y-4">
+            <h3 className="text-lg font-semibold text-foreground">Administrador do Sistema</h3>
+            <p className="text-sm text-muted-foreground">
+              Cadastre as informações de acesso para o administrador deste sistema (será adicionado à listagem de usuários)
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel>Nome do Administrador *</FieldLabel>
+                <Input
+                  placeholder="Nome do administrador"
+                  value={adminNome}
+                  onChange={(e) => setAdminNome(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Telefone do Administrador (WhatsApp/Login) *</FieldLabel>
+                <Input
+                  placeholder="(11) 99999-9999"
+                  value={adminTelefone}
+                  onChange={(e) => setAdminTelefone(e.target.value)}
+                />
+                <FieldDescription>
+                  Este número será usado pelo administrador para fazer login via SMS
+                </FieldDescription>
+              </Field>
+            </div>
+          </div>
 
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">

@@ -18,7 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Save, Loader2, Search } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Save, Loader2, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { FotoUpload } from "@/components/membros/foto-upload";
 
@@ -56,6 +57,11 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
   const [fotoBase64, setFotoBase64] = useState<string | null>(null);
+
+  // Collapsible section states
+  const [dadosPrincipaisOpen, setDadosPrincipaisOpen] = useState(true);
+  const [contatoOpen, setContatoOpen] = useState(true);
+  const [enderecoOpen, setEnderecoOpen] = useState(true);
 
   useEffect(() => {
     loadIgrejasExistentes();
@@ -245,246 +251,296 @@ export function IgrejaForm({ igrejaId, onSuccess, onCancel }: IgrejaFormProps) {
       </Card>
 
       {/* Dados Principais */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Dados Principais</CardTitle>
-          <CardDescription>Informações básicas da igreja</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="nome">Nome da Igreja *</Label>
-              <Input
-                id="nome"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Ex: Igreja Missão Restaurar"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tipo">Tipo *</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo(v as TipoIgreja)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(TIPOS_IGREJA).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      <Collapsible open={dadosPrincipaisOpen} onOpenChange={setDadosPrincipaisOpen} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">Dados Principais</CardTitle>
+                  <CardDescription>Informações básicas da igreja</CardDescription>
+                  {!dadosPrincipaisOpen && nome && (
+                    <p className="text-xs text-muted-foreground">
+                      Nome: <span className="font-semibold text-primary">{nome}</span>
+                    </p>
+                  )}
+                </div>
+                {dadosPrincipaisOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="nome">Nome da Igreja *</Label>
+                  <Input
+                    id="nome"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Ex: Igreja Missão Restaurar"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tipo">Tipo *</Label>
+                  <Select value={tipo} onValueChange={(v) => setTipo(v as TipoIgreja)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(TIPOS_IGREJA).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-          {tipo !== "sede" && igrejasExistentes.length > 0 && (
-            <div className="space-y-2">
-              <Label htmlFor="igrejaPai">Igreja Matriz</Label>
-              <Select value={igrejaPaiId} onValueChange={setIgrejaPaiId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a igreja matriz" />
-                </SelectTrigger>
-                <SelectContent>
-                  {igrejasExistentes
-                    .filter(i => i.tipo === "sede" || i.tipo === "congregacao")
-                    .map((igreja) => (
-                      <SelectItem key={igreja.id} value={igreja.id}>
-                        {igreja.nome}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+              {tipo !== "sede" && igrejasExistentes.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="igrejaPai">Igreja Matriz</Label>
+                  <Select value={igrejaPaiId} onValueChange={setIgrejaPaiId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a igreja matriz" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {igrejasExistentes
+                        .filter(i => i.tipo === "sede" || i.tipo === "congregacao")
+                        .map((igreja) => (
+                          <SelectItem key={igreja.id} value={igreja.id}>
+                            {igreja.nome}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="codIgreja">Código da Igreja</Label>
-              <Input
-                id="codIgreja"
-                value={codIgreja}
-                onChange={(e) => setCodIgreja(e.target.value)}
-                placeholder="Ex: IMR-001"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="cnpj">CNPJ</Label>
-              <Input
-                id="cnpj"
-                value={cnpj}
-                onChange={(e) => setCnpj(formatCnpj(e.target.value))}
-                placeholder="00.000.000/0000-00"
-                maxLength={18}
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="codIgreja">Código da Igreja</Label>
+                  <Input
+                    id="codIgreja"
+                    value={codIgreja}
+                    onChange={(e) => setCodIgreja(e.target.value)}
+                    placeholder="Ex: IMR-001"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cnpj">CNPJ</Label>
+                  <Input
+                    id="cnpj"
+                    value={cnpj}
+                    onChange={(e) => setCnpj(formatCnpj(e.target.value))}
+                    placeholder="00.000.000/0000-00"
+                    maxLength={18}
+                  />
+                </div>
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="convencao">Convenção</Label>
-              <Input
-                id="convencao"
-                value={convencao}
-                onChange={(e) => setConvencao(e.target.value)}
-                placeholder="Ex: CGADB"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ministerio">Ministério</Label>
-              <Input
-                id="ministerio"
-                value={ministerio}
-                onChange={(e) => setMinisterio(e.target.value)}
-                placeholder="Ex: Ministério Madureira"
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="convencao">Convenção</Label>
+                  <Input
+                    id="convencao"
+                    value={convencao}
+                    onChange={(e) => setConvencao(e.target.value)}
+                    placeholder="Ex: CGADB"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ministerio">Ministério</Label>
+                  <Input
+                    id="ministerio"
+                    value={ministerio}
+                    onChange={(e) => setMinisterio(e.target.value)}
+                    placeholder="Ex: Ministério Madureira"
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="dirigente">Dirigente/Pastor</Label>
-            <Input
-              id="dirigente"
-              value={dirigente}
-              onChange={(e) => setDirigente(e.target.value)}
-              placeholder="Nome do pastor ou dirigente"
-            />
-          </div>
-        </CardContent>
-      </Card>
+              <div className="space-y-2">
+                <Label htmlFor="dirigente">Dirigente/Pastor</Label>
+                <Input
+                  id="dirigente"
+                  value={dirigente}
+                  onChange={(e) => setDirigente(e.target.value)}
+                  placeholder="Nome do pastor ou dirigente"
+                />
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Contato */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Contato</CardTitle>
-          <CardDescription>Informações de contato da igreja</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="telefone">Telefone</Label>
-              <Input
-                id="telefone"
-                value={telefone}
-                onChange={(e) => setTelefone(formatTelefone(e.target.value))}
-                placeholder="(00) 00000-0000"
-                maxLength={15}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="contato@igreja.com"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Collapsible open={contatoOpen} onOpenChange={setContatoOpen} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">Contato</CardTitle>
+                  <CardDescription>Informações de contato da igreja</CardDescription>
+                  {!contatoOpen && (telefone || email) && (
+                    <p className="text-xs text-muted-foreground">
+                      {telefone && <span>Telefone: <span className="font-semibold text-primary">{telefone}</span></span>}
+                      {telefone && email && <span className="mx-2">|</span>}
+                      {email && <span>Email: <span className="font-semibold text-primary">{email}</span></span>}
+                    </p>
+                  )}
+                </div>
+                {contatoOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="telefone">Telefone</Label>
+                  <Input
+                    id="telefone"
+                    value={telefone}
+                    onChange={(e) => setTelefone(formatTelefone(e.target.value))}
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="contato@igreja.com"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Endereço */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Endereço</CardTitle>
-          <CardDescription>Localização da igreja</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="cep">CEP</Label>
-              <Input
-                id="cep"
-                value={cep}
-                onChange={(e) => setCep(formatCep(e.target.value))}
-                placeholder="00000-000"
-                maxLength={9}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="mt-8"
-              onClick={buscarCep}
-              disabled={buscandoCep || cep.length < 9}
-            >
-              {buscandoCep ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-              <span className="ml-2">Buscar</span>
-            </Button>
-          </div>
+      <Collapsible open={enderecoOpen} onOpenChange={setEnderecoOpen} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">Endereço</CardTitle>
+                  <CardDescription>Localização da igreja</CardDescription>
+                  {!enderecoOpen && logradouro && (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold text-primary">{logradouro}</span>, {numero || "s/n"} - {bairro || "N/A"}, {cidade || "N/A"}/{estado || "N/A"}
+                    </p>
+                  )}
+                </div>
+                {enderecoOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="cep">CEP</Label>
+                  <Input
+                    id="cep"
+                    value={cep}
+                    onChange={(e) => setCep(formatCep(e.target.value))}
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-8"
+                  onClick={buscarCep}
+                  disabled={buscandoCep || cep.length < 9}
+                >
+                  {buscandoCep ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  <span className="ml-2">Buscar</span>
+                </Button>
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2 space-y-2">
-              <Label htmlFor="logradouro">Logradouro</Label>
-              <Input
-                id="logradouro"
-                value={logradouro}
-                onChange={(e) => setLogradouro(e.target.value)}
-                placeholder="Rua, Avenida, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="numero">Número</Label>
-              <Input
-                id="numero"
-                value={numero}
-                onChange={(e) => setNumero(e.target.value)}
-                placeholder="123"
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-2 space-y-2">
+                  <Label htmlFor="logradouro">Logradouro</Label>
+                  <Input
+                    id="logradouro"
+                    value={logradouro}
+                    onChange={(e) => setLogradouro(e.target.value)}
+                    placeholder="Rua, Avenida, etc."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="numero">Número</Label>
+                  <Input
+                    id="numero"
+                    value={numero}
+                    onChange={(e) => setNumero(e.target.value)}
+                    placeholder="123"
+                  />
+                </div>
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="complemento">Complemento</Label>
-              <Input
-                id="complemento"
-                value={complemento}
-                onChange={(e) => setComplemento(e.target.value)}
-                placeholder="Apto, Bloco, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bairro">Bairro</Label>
-              <Input
-                id="bairro"
-                value={bairro}
-                onChange={(e) => setBairro(e.target.value)}
-                placeholder="Bairro"
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="complemento">Complemento</Label>
+                  <Input
+                    id="complemento"
+                    value={complemento}
+                    onChange={(e) => setComplemento(e.target.value)}
+                    placeholder="Apto, Bloco, etc."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bairro">Bairro</Label>
+                  <Input
+                    id="bairro"
+                    value={bairro}
+                    onChange={(e) => setBairro(e.target.value)}
+                    placeholder="Bairro"
+                  />
+                </div>
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="cidade">Cidade</Label>
-              <Input
-                id="cidade"
-                value={cidade}
-                onChange={(e) => setCidade(e.target.value)}
-                placeholder="Cidade"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="estado">Estado</Label>
-              <Input
-                id="estado"
-                value={estado}
-                onChange={(e) => setEstado(e.target.value.toUpperCase())}
-                placeholder="UF"
-                maxLength={2}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="cidade">Cidade</Label>
+                  <Input
+                    id="cidade"
+                    value={cidade}
+                    onChange={(e) => setCidade(e.target.value)}
+                    placeholder="Cidade"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="estado">Estado</Label>
+                  <Input
+                    id="estado"
+                    value={estado}
+                    onChange={(e) => setEstado(e.target.value.toUpperCase())}
+                    placeholder="UF"
+                    maxLength={2}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Ações */}
       <div className="flex gap-4 justify-end">
