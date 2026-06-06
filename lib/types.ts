@@ -126,6 +126,22 @@ export interface Unidade {
   telefone?: string;
   ativa: boolean;
   dataCriacao: Timestamp;
+  fotoUrl?: string;
+  // Campos de Regional / Setor
+  ehHospedeira?: boolean;
+  hospedaRegionalId?: string | null;
+  regionalSetorId?: string | null;
+}
+
+export interface RegionalSetor {
+  id: string;
+  tipo: "regional" | "setor";
+  numero: number;
+  nome: string;
+  hospedeiraId: string; // ID da unidade (igreja) hospedeira
+  dirigente?: string;
+  igrejasMembrosIds?: string[]; // congregações/subcongregações associadas
+  dataCriacao: Timestamp;
 }
 
 

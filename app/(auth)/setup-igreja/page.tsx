@@ -430,6 +430,25 @@ export default function SetupIgrejaPage() {
         
         const novaUnidadeRef = await addDoc(unidadesRef, unidadeData);
         finalUnidadeId = novaUnidadeRef.id;
+
+        // Cria a Regional 1 automaticamente hospedada na Sede
+        const regionaisRef = collection(db, "igrejas", finalIgrejaId, "regionais_setores");
+        const regionalDocRef = await addDoc(regionaisRef, {
+          tipo: "regional",
+          numero: 1,
+          nome: "Regional 1",
+          hospedeiraId: finalUnidadeId,
+          dirigente: dirigente.trim() || null,
+          igrejasMembrosIds: [finalUnidadeId],
+          dataCriacao: Timestamp.now()
+        });
+
+        // Atualiza a unidade Sede com as referências da regional
+        await updateDoc(doc(db, "igrejas", finalIgrejaId, "unidades", finalUnidadeId), {
+          ehHospedeira: true,
+          hospedaRegionalId: regionalDocRef.id,
+          regionalSetorId: regionalDocRef.id
+        });
       }
       
       // ========== TIPO CONGREGAÇÃO ==========

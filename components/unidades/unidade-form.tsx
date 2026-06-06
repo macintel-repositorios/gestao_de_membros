@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, getDoc, updateDoc, addDoc, Timestamp, query, onSnapshot, orderBy } from "firebase/firestore";
+import { doc, getDoc, updateDoc, addDoc, Timestamp, query, onSnapshot, orderBy, collection, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getUnidadesCollection } from "@/lib/firestore";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { Building2, Loader2, Trash2 } from "lucide-react";
@@ -35,6 +36,7 @@ import {
   Unidade,
   TipoUnidade,
   TIPOS_UNIDADE,
+  RegionalSetor,
 } from "@/lib/types";
 
 interface UnidadeFormProps {
@@ -70,7 +72,39 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
   });
   const [fotoBase64, setFotoBase64] = useState<string | null>(null);
 
+  const [ehHospedeira, setEhHospedeira] = useState(false);
+  const [hospedaRegionalId, setHospedaRegionalId] = useState<string | null>(null);
+  const [regionalSetorId, setRegionalSetorId] = useState<string | null>(null);
+  const [regTipo, setRegTipo] = useState<"regional" | "setor">("regional");
+  const [regNumero, setRegNumero] = useState<number>(1);
+  const [regionaisSetores, setRegionaisSetores] = useState<RegionalSetor[]>([]);
+
   const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
+
+  // Force Sede to always default to Regional 1
+  useEffect(() => {
+    if (formData.tipo === "sede") {
+      setEhHospedeira(true);
+      setRegTipo("regional");
+      setRegNumero(1);
+    }
+  }, [formData.tipo]);
+
+  // Carrega todas as regionais_setores
+  useEffect(() => {
+    if (!igrejaId) return;
+
+    const regionaisRef = collection(db!, "igrejas", igrejaId, "regionais_setores");
+    const unsubscribe = onSnapshot(regionaisRef, (snapshot) => {
+      const data: RegionalSetor[] = [];
+      snapshot.forEach((docSnap) => {
+        data.push({ id: docSnap.id, ...docSnap.data() } as RegionalSetor);
+      });
+      setRegionaisSetores(data);
+    });
+
+    return () => unsubscribe();
+  }, [igrejaId]);
 
   // Carrega a unidade atual se for edição
   useEffect(() => {
@@ -103,6 +137,20 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
             },
           });
           setFotoBase64(data.fotoUrl || null);
+          const isHosp = data.ehHospedeira || false;
+          setEhHospedeira(isHosp);
+          setHospedaRegionalId(data.hospedaRegionalId || null);
+          setRegionalSetorId(data.regionalSetorId || null);
+
+          if (isHosp && data.hospedaRegionalId) {
+            const regRef = doc(db!, "igrejas", igrejaId, "regionais_setores", data.hospedaRegionalId);
+            const regDoc = await getDoc(regRef);
+            if (regDoc.exists()) {
+              const regData = regDoc.data();
+              setRegTipo(regData.tipo || "regional");
+              setRegNumero(regData.numero || 1);
+            }
+          }
         } else {
           toast.error("Unidade não encontrada");
         }
@@ -193,6 +241,8 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
     setSaving(true);
 
     try {
+      let finalUnidadeId = unidadeId;
+
       if (unidadeId) {
         const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", unidadeId);
         await updateDoc(unidadeRef, {
@@ -205,9 +255,8 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           fotoUrl: fotoBase64 || null,
           dataAtualizacao: Timestamp.now(),
         });
-        toast.success("Unidade atualizada com sucesso!");
       } else {
-        await addDoc(getUnidadesCollection(igrejaId), {
+        const docRef = await addDoc(getUnidadesCollection(igrejaId), {
           nome: formData.nome,
           tipo: formData.tipo,
           unidadePaiId: formData.unidadePaiId || null,
@@ -218,9 +267,60 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           ativa: true,
           dataCriacao: Timestamp.now(),
         });
-        toast.success("Unidade criada com sucesso!");
+        finalUnidadeId = docRef.id;
       }
 
+      const labelTipo = regTipo === "regional" ? "Regional" : "Setor";
+      const regNome = `${labelTipo} ${regNumero}`;
+
+      if (ehHospedeira) {
+        let currentRegId = hospedaRegionalId;
+        
+        if (currentRegId) {
+          const regRef = doc(db!, "igrejas", igrejaId, "regionais_setores", currentRegId);
+          await updateDoc(regRef, {
+            tipo: regTipo,
+            numero: regNumero,
+            nome: regNome,
+            hospedeiraId: finalUnidadeId,
+            dirigente: formData.dirigente || null,
+          });
+        } else {
+          const regCollectionRef = collection(db!, "igrejas", igrejaId, "regionais_setores");
+          const regDocRef = await addDoc(regCollectionRef, {
+            tipo: regTipo,
+            numero: regNumero,
+            nome: regNome,
+            hospedeiraId: finalUnidadeId,
+            dirigente: formData.dirigente || null,
+            igrejasMembrosIds: [],
+            dataCriacao: Timestamp.now(),
+          });
+          currentRegId = regDocRef.id;
+        }
+
+        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", finalUnidadeId);
+        await updateDoc(unidadeRef, {
+          ehHospedeira: true,
+          hospedaRegionalId: currentRegId,
+          regionalSetorId: currentRegId,
+        });
+
+      } else {
+        if (hospedaRegionalId) {
+          const oldRegRef = doc(db!, "igrejas", igrejaId, "regionais_setores", hospedaRegionalId);
+          await deleteDoc(oldRegRef);
+        }
+
+        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", finalUnidadeId);
+        await updateDoc(unidadeRef, {
+          ehHospedeira: false,
+          hospedaRegionalId: null,
+          regionalSetorId: regionalSetorId || null,
+        });
+      }
+
+      toast.success(unidadeId ? "Unidade atualizada com sucesso!" : "Unidade criada com sucesso!");
       if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Erro ao salvar unidade:", error);
@@ -389,6 +489,91 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Configuração de Regional / Setor */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            Vínculo Regional / Setor
+          </CardTitle>
+          <CardDescription>
+            Defina se esta unidade hospeda ou pertence a uma Regional ou Setor.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center space-x-2 p-2 hover:bg-muted/40 rounded-lg">
+            <Checkbox
+              id="ehHospedeira"
+              checked={ehHospedeira}
+              onCheckedChange={(checked) => setEhHospedeira(!!checked)}
+              disabled={formData.tipo === "sede"}
+            />
+            <Label htmlFor="ehHospedeira" className="text-sm font-medium leading-none cursor-pointer flex-1">
+              Esta igreja é Hospedeira de uma Regional/Setor?
+              {formData.tipo === "sede" && (
+                <span className="text-xs text-muted-foreground block mt-1">
+                  A sede é obrigatoriamente a Hospedeira da Regional 1.
+                </span>
+              )}
+            </Label>
+          </div>
+
+          {ehHospedeira ? (
+            <div className="grid gap-4 sm:grid-cols-2 p-4 bg-muted/20 rounded-lg border border-border">
+              <div className="space-y-2">
+                <Label htmlFor="regTipo">Tipo da Hospedada *</Label>
+                <Select
+                  value={regTipo}
+                  onValueChange={(v) => setRegTipo(v as "regional" | "setor")}
+                  disabled={formData.tipo === "sede"}
+                >
+                  <SelectTrigger id="regTipo">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="regional">Regional</SelectItem>
+                    <SelectItem value="setor">Setor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="regNumero">Número *</Label>
+                <Input
+                  id="regNumero"
+                  type="number"
+                  min={1}
+                  value={regNumero}
+                  onChange={(e) => setRegNumero(parseInt(e.target.value) || 1)}
+                  disabled={formData.tipo === "sede"}
+                  required
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 p-4 bg-muted/20 rounded-lg border border-border">
+              <Label htmlFor="regionalPertence">Pertence a qual Regional / Setor?</Label>
+              <Select
+                value={regionalSetorId || "nenhum"}
+                onValueChange={(v) => setRegionalSetorId(v === "nenhum" ? null : v)}
+              >
+                <SelectTrigger id="regionalPertence">
+                  <SelectValue placeholder="Selecione a regional/setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nenhum">Nenhuma (Não associada)</SelectItem>
+                  {regionaisSetores.map((reg) => (
+                    <SelectItem key={reg.id} value={reg.id}>
+                      {reg.nome} (Hospedeira: {unidadesExistentes.find(u => u.id === reg.hospedeiraId)?.nome || "Carregando..."})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 

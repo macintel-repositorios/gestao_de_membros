@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { query, onSnapshot, orderBy, collection, getDocs } from "firebase/firestore";
+import { query, onSnapshot, orderBy, collection, getDocs, doc, deleteDoc } from "firebase/firestore";
 import { getUnidadesCollection } from "@/lib/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -13,19 +12,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
-  Building2,
+  ShieldAlert,
   Search,
   Plus,
   Eye,
   Edit,
-  ChevronRight,
-  MapPin,
+  Trash2,
+  Building2,
   Users,
+  User,
   Phone,
 } from "lucide-react";
 import {
+  RegionalSetor,
   Unidade,
-  TipoUnidade,
   TIPOS_UNIDADE,
 } from "@/lib/types";
 import {
@@ -35,29 +35,38 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { UnidadeForm } from "@/components/unidades/unidade-form";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { RegionalForm } from "@/components/regionais/regional-form";
+import { toast } from "sonner";
 
-const CORES_TIPO_UNIDADE: Record<TipoUnidade, string> = {
-  sede: "#16a34a",
-  congregacao: "#2563eb",
-  subcongregacao: "#9333ea",
-};
-
-interface UnidadeComContagem extends Unidade {
+interface RegionalComContagem extends RegionalSetor {
+  hospedeiraNome: string;
   totalMembros: number;
+  igrejasMembrosNomes: string[];
 }
 
-export default function UnidadesPage() {
-  const { igrejaId, nivelAcesso, unidadesAcessiveis, temAcessoTotal } = useAuth();
-  const [unidades, setUnidades] = useState<UnidadeComContagem[]>([]);
+export default function RegionaisPage() {
+  const { igrejaId, nivelAcesso } = useAuth();
+  const [regionais, setRegionais] = useState<RegionalComContagem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const [unidadeParaVisualizar, setUnidadeParaVisualizar] = useState<UnidadeComContagem | null>(null);
-  const [unidadeParaEditar, setUnidadeParaEditar] = useState<UnidadeComContagem | null>(null);
+  const [regionalParaVisualizar, setRegionalParaVisualizar] = useState<RegionalComContagem | null>(null);
+  const [regionalParaEditar, setRegionalParaEditar] = useState<RegionalComContagem | null>(null);
   const [isNovaOpen, setIsNovaOpen] = useState(false);
 
-  const canManageUnidades = nivelAcesso === "full" || nivelAcesso === "admin";
+  const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
 
   useEffect(() => {
     if (!igrejaId || !db) {
@@ -65,262 +74,121 @@ export default function UnidadesPage() {
       return;
     }
 
+    // Listener para todas as unidades/igrejas (necessário para mapear nomes e membros)
     const unidadesRef = getUnidadesCollection(igrejaId);
-    const q = query(unidadesRef, orderBy("nome", "asc"));
+    const qUnidades = query(unidadesRef, orderBy("nome", "asc"));
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const unidadesData: UnidadeComContagem[] = [];
-      
+    // Listener para regionais_setores
+    const regionaisRef = collection(db, "igrejas", igrejaId, "regionais_setores");
+    const qRegionais = query(regionaisRef, orderBy("numero", "asc"));
+
+    let todasUnidades: Unidade[] = [];
+    const unsubUnidades = onSnapshot(qUnidades, (snapshot) => {
+      todasUnidades = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }) as Unidade);
+    });
+
+    const unsubRegionais = onSnapshot(qRegionais, async (snapshot) => {
+      const regionaisList: RegionalComContagem[] = [];
+
       for (const docSnap of snapshot.docs) {
-        const unidadeData = { id: docSnap.id, ...docSnap.data() } as Unidade;
+        const regData = { id: docSnap.id, ...docSnap.data() } as RegionalSetor;
         
-        // Conta membros desta unidade
+        // Encontra o nome da igreja hospedeira
+        const hospedeira = todasUnidades.find((u) => u.id === regData.hospedeiraId);
+        const hospedeiraNome = hospedeira?.nome || "Não definida";
+
+        // Filtra congregações pertencentes a esta regional
+        const igrejasPertencentes = todasUnidades.filter(
+          (u) => u.regionalSetorId === regData.id && u.id !== regData.hospedeiraId
+        );
+        const igrejasMembrosNomes = igrejasPertencentes.map((u) => u.nome);
+
+        // Soma membros de todas as igrejas desta regional (incluindo hospedeira)
         let totalMembros = 0;
-        try {
-          const membrosRef = collection(db!, "igrejas", igrejaId, "unidades", unidadeData.id, "membros");
-          const membrosSnapshot = await getDocs(membrosRef);
-          totalMembros = membrosSnapshot.docs.filter(m => m.data().ativo !== false).length;
-        } catch {
-          totalMembros = 0;
+        const todasIgrejasDaRegional = [regData.hospedeiraId, ...igrejasPertencentes.map((u) => u.id)];
+
+        for (const unitId of todasIgrejasDaRegional) {
+          try {
+            const membrosRef = collection(db!, "igrejas", igrejaId, "unidades", unitId, "membros");
+            const snapshotMembros = await getDocs(membrosRef);
+            totalMembros += snapshotMembros.docs.filter((m) => m.data().ativo !== false).length;
+          } catch {
+            // Unidade vazia ou sem acesso
+          }
         }
 
-        unidadesData.push({
-          ...unidadeData,
-          totalMembros
+        regionaisList.push({
+          ...regData,
+          hospedeiraNome,
+          totalMembros,
+          igrejasMembrosNomes,
         });
       }
-      
-      setUnidades(unidadesData);
+
+      setRegionais(regionaisList);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubUnidades();
+      unsubRegionais();
+    };
   }, [igrejaId]);
 
-  // Filtra unidades baseado no acesso do usuário
-  const unidadesVisiveis = unidades.filter((unidade) => {
-    if (temAcessoTotal()) return true;
-    return unidadesAcessiveis.includes(unidade.id);
-  });
+  const handleDelete = async () => {
+    if (!deleteId || !igrejaId) return;
 
-  // Filtra por busca
-  const filteredUnidades = unidadesVisiveis.filter((unidade) => {
-    if (!unidade.ativa) return false;
-
-    const matchesSearch =
-      unidade.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      unidade.endereco?.bairro?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      unidade.endereco?.cidade?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      unidade.dirigente?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    return matchesSearch;
-  });
-
-  // Separa por tipo
-  const sedes = filteredUnidades.filter(u => u.tipo === "sede");
-  const congregacoes = filteredUnidades.filter(u => u.tipo === "congregacao");
-  const subcongregacoes = filteredUnidades.filter(u => u.tipo === "subcongregacao");
-
-  // Organiza em hierarquia para exibição
-  const getUnidadePai = (unidadeId: string | undefined) => {
-    if (!unidadeId) return null;
-    return unidades.find(u => u.id === unidadeId);
-  };
-
-  const getHierarquia = (unidade: Unidade): string => {
-    const parts: string[] = [];
-    let current = getUnidadePai(unidade.unidadePaiId);
-    while (current) {
-      parts.unshift(current.nome);
-      current = getUnidadePai(current.unidadePaiId);
+    try {
+      setDeleting(true);
+      const docRef = doc(db!, "igrejas", igrejaId, "regionais_setores", deleteId);
+      await deleteDoc(docRef);
+      toast.success("Regional/Setor removida com sucesso!");
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Erro ao remover:", error);
+      toast.error("Erro ao remover regional/setor.");
+    } finally {
+      setDeleting(false);
     }
-    return parts.join(" > ");
   };
 
-  // Estatísticas
-  const stats = {
-    total: unidadesVisiveis.filter(u => u.ativa).length,
-    sedes: unidadesVisiveis.filter(u => u.tipo === "sede" && u.ativa).length,
-    congregacoes: unidadesVisiveis.filter(u => u.tipo === "congregacao" && u.ativa).length,
-    subcongregacoes: unidadesVisiveis.filter(u => u.tipo === "subcongregacao" && u.ativa).length,
-    totalMembros: unidadesVisiveis.reduce((acc, u) => acc + u.totalMembros, 0),
-  };
-
-  const renderUnidadeCard = (unidade: UnidadeComContagem) => (
-    <Card key={unidade.id} className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div 
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-white shrink-0"
-              style={{ backgroundColor: CORES_TIPO_UNIDADE[unidade.tipo] }}
-            >
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-semibold truncate">{unidade.nome}</h3>
-              {unidade.dirigente && (
-                <p className="text-sm text-muted-foreground truncate">{unidade.dirigente}</p>
-              )}
-              {unidade.unidadePaiId && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="truncate">{getHierarquia(unidade)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setUnidadeParaVisualizar(unidade)}>
-              <Eye className="h-4 w-4" />
-              <span className="sr-only">Ver detalhes</span>
-            </Button>
-            {canManageUnidades && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setUnidadeParaEditar(unidade)}>
-                <Edit className="h-4 w-4" />
-                <span className="sr-only">Editar</span>
-              </Button>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4 mt-4 pt-3 border-t text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Users className="h-4 w-4" />
-            <span>{unidade.totalMembros} membros</span>
-          </div>
-          {unidade.endereco?.cidade && (
-            <div className="flex items-center gap-1">
-              <MapPin className="h-4 w-4" />
-              <span className="truncate">{unidade.endereco.cidade}</span>
-            </div>
-          )}
-          {unidade.telefone && (
-            <div className="flex items-center gap-1">
-              <Phone className="h-4 w-4" />
-              <span>{unidade.telefone}</span>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-
-  const renderUnidadeSection = (
-    tipo: TipoUnidade, 
-    unidadesLista: UnidadeComContagem[],
-    titulo: string,
-    descricao: string
-  ) => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div 
-          className="h-4 w-4 rounded-full" 
-          style={{ backgroundColor: CORES_TIPO_UNIDADE[tipo] }}
-        />
-        <div>
-          <h2 className="text-lg font-semibold">{titulo}</h2>
-          <p className="text-sm text-muted-foreground">{descricao}</p>
-        </div>
-      </div>
-
-      {unidadesLista.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Building2 className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-            <p className="text-sm text-muted-foreground">
-              Nenhuma {TIPOS_UNIDADE[tipo].toLowerCase()} cadastrada
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {unidadesLista.map(renderUnidadeCard)}
-        </div>
-      )}
-    </div>
-  );
+  const filteredRegionais = regionais.filter((reg) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      reg.nome.toLowerCase().includes(term) ||
+      reg.hospedeiraNome.toLowerCase().includes(term) ||
+      (reg.dirigente && reg.dirigente.toLowerCase().includes(term))
+    );
+  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Unidades</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Regionais e Setores</h1>
           <p className="text-muted-foreground">
-            Gerencie as sedes, congregações e subcongregações
+            Gerencie as divisões administrativas e aglomerações de congregações
           </p>
         </div>
-        {canManageUnidades && (
+        {canManage && (
           <Button onClick={() => setIsNovaOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Nova Unidade
+            Nova Regional/Setor
           </Button>
         )}
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Total de Unidades</div>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <div 
-                className="h-3 w-3 rounded-full" 
-                style={{ backgroundColor: CORES_TIPO_UNIDADE.sede }}
-              />
-              <span className="text-sm text-muted-foreground">Sedes</span>
-            </div>
-            <div className="text-2xl font-bold">{stats.sedes}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <div 
-                className="h-3 w-3 rounded-full" 
-                style={{ backgroundColor: CORES_TIPO_UNIDADE.congregacao }}
-              />
-              <span className="text-sm text-muted-foreground">Congregações</span>
-            </div>
-            <div className="text-2xl font-bold">{stats.congregacoes}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <div 
-                className="h-3 w-3 rounded-full" 
-                style={{ backgroundColor: CORES_TIPO_UNIDADE.subcongregacao }}
-              />
-              <span className="text-sm text-muted-foreground">Subcongregações</span>
-            </div>
-            <div className="text-2xl font-bold">{stats.subcongregacoes}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Total de Membros</span>
-            </div>
-            <div className="text-2xl font-bold">{stats.totalMembros}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
+      {/* Search Bar */}
       <Card>
         <CardContent className="p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nome, dirigente, bairro ou cidade..."
+              placeholder="Buscar por nome, dirigente ou igreja hospedeira..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9"
@@ -329,102 +197,140 @@ export default function UnidadesPage() {
         </CardContent>
       </Card>
 
-      {/* Content */}
+      {/* Grid List */}
       {loading ? (
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Skeleton className="h-10 w-10 rounded" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="h-3 w-32" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : filteredUnidades.length === 0 && unidades.length === 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-6 space-y-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : filteredRegionais.length === 0 ? (
         <Card>
           <CardContent className="p-12">
             <Empty>
               <EmptyMedia variant="icon">
-                <Building2 className="h-10 w-10" />
+                <ShieldAlert className="h-10 w-10" />
               </EmptyMedia>
-              <EmptyTitle>Nenhuma unidade cadastrada</EmptyTitle>
+              <EmptyTitle>Nenhuma Regional ou Setor cadastrado</EmptyTitle>
               <EmptyDescription>
-                Comece cadastrando a primeira unidade (sede).
+                Regionais e Setores organizam a árvore e aglomeram congregações.
               </EmptyDescription>
-              {canManageUnidades && (
+              {canManage && (
                 <Button onClick={() => setIsNovaOpen(true)} className="mt-4">
                   <Plus className="mr-2 h-4 w-4" />
-                  Cadastrar Unidade
+                  Cadastrar Regional/Setor
                 </Button>
               )}
             </Empty>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-8">
-          {/* Sedes */}
-          {renderUnidadeSection(
-            "sede", 
-            sedes, 
-            "Sedes", 
-            "Igreja sede - ponto central da estrutura"
-          )}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredRegionais.map((reg) => (
+            <Card key={reg.id} className="hover:shadow-md transition-shadow relative">
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-bold">{reg.nome}</CardTitle>
+                    <Badge variant="secondary" className="mt-1 font-semibold uppercase">
+                      {reg.tipo}
+                    </Badge>
+                  </div>
 
-          {/* Congregações */}
-          {renderUnidadeSection(
-            "congregacao", 
-            congregacoes, 
-            "Congregações", 
-            "Congregações vinculadas às sedes"
-          )}
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setRegionalParaVisualizar(reg)}>
+                      <Eye className="h-4 w-4" />
+                      <span className="sr-only">Visualizar</span>
+                    </Button>
+                    {canManage && (
+                      <>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setRegionalParaEditar(reg)}>
+                          <Edit className="h-4 w-4" />
+                          <span className="sr-only">Editar</span>
+                        </Button>
+                        {reg.nome !== "Regional 1" && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(reg.id)}>
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Remover</span>
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm pt-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Building2 className="h-4 w-4 text-primary shrink-0" />
+                  <span className="truncate">Hospedeira: <strong>{reg.hospedeiraNome}</strong></span>
+                </div>
+                
+                {reg.dirigente && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <User className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Dirigente: {reg.dirigente}</span>
+                  </div>
+                )}
 
-          {/* Subcongregações */}
-          {renderUnidadeSection(
-            "subcongregacao", 
-            subcongregacoes, 
-            "Subcongregações", 
-            "Subcongregações vinculadas às congregações"
-          )}
+                <div className="flex items-center gap-2 text-muted-foreground border-t pt-2 mt-2">
+                  <Users className="h-4 w-4 shrink-0" />
+                  <span>{reg.totalMembros} membros na regional</span>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  {reg.igrejasMembrosNomes.length > 0 ? (
+                    <p className="truncate">
+                      Congregações: {reg.igrejasMembrosNomes.join(", ")}
+                    </p>
+                  ) : (
+                    <p className="italic">Nenhuma congregação vinculada</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* Drawer: Nova Unidade */}
+      {/* Drawer: Novo Regional/Setor */}
       <Sheet open={isNovaOpen} onOpenChange={setIsNovaOpen}>
         <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
           <SheetHeader className="mb-6">
-            <SheetTitle>Nova Unidade</SheetTitle>
+            <SheetTitle>Nova Regional ou Setor</SheetTitle>
             <SheetDescription>
-              Cadastre uma nova sede, congregação ou subcongregação
+              Cadastre e defina a igreja hospedeira do novo agrupamento
             </SheetDescription>
           </SheetHeader>
-          <UnidadeForm
-            onSuccess={() => setIsNovaOpen(false)}
+          <RegionalForm
+            onSuccess={() => {
+              setIsNovaOpen(false);
+            }}
             onCancel={() => setIsNovaOpen(false)}
           />
         </SheetContent>
       </Sheet>
 
-      {/* Drawer: Editar Unidade */}
-      <Sheet open={!!unidadeParaEditar} onOpenChange={(open) => !open && setUnidadeParaEditar(null)}>
+      {/* Drawer: Editar Regional/Setor */}
+      <Sheet open={!!regionalParaEditar} onOpenChange={(open) => !open && setRegionalParaEditar(null)}>
         <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
-          {unidadeParaEditar && (
+          {regionalParaEditar && (
             <>
               <SheetHeader className="mb-6">
-                <SheetTitle>Editar Unidade</SheetTitle>
+                <SheetTitle>Editar {regionalParaEditar.nome}</SheetTitle>
                 <SheetDescription>
-                  Atualize os dados da unidade: {unidadeParaEditar.nome}
+                  Atualize os dados e a hospedeira da regional/setor
                 </SheetDescription>
               </SheetHeader>
-              <UnidadeForm
-                unidadeId={unidadeParaEditar.id}
-                onSuccess={() => setUnidadeParaEditar(null)}
-                onCancel={() => setUnidadeParaEditar(null)}
+              <RegionalForm
+                regionalId={regionalParaEditar.id}
+                onSuccess={() => setRegionalParaEditar(null)}
+                onCancel={() => setRegionalParaEditar(null)}
               />
             </>
           )}
@@ -432,120 +338,106 @@ export default function UnidadesPage() {
       </Sheet>
 
       {/* Drawer: Visualizar Detalhes */}
-      <Sheet open={!!unidadeParaVisualizar} onOpenChange={(open) => !open && setUnidadeParaVisualizar(null)}>
+      <Sheet open={!!regionalParaVisualizar} onOpenChange={(open) => !open && setRegionalParaVisualizar(null)}>
         <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
-          {unidadeParaVisualizar && (
+          {regionalParaVisualizar && (
             <div className="space-y-6">
               <SheetHeader>
                 <div className="flex items-center gap-2">
-                  <SheetTitle>{unidadeParaVisualizar.nome}</SheetTitle>
-                  <Badge
-                    style={{
-                      backgroundColor: CORES_TIPO_UNIDADE[unidadeParaVisualizar.tipo],
-                      color: "white",
-                    }}
-                  >
-                    {TIPOS_UNIDADE[unidadeParaVisualizar.tipo]}
-                  </Badge>
+                  <SheetTitle>{regionalParaVisualizar.nome}</SheetTitle>
+                  <Badge variant="secondary" className="uppercase">{regionalParaVisualizar.tipo}</Badge>
                 </div>
-                {unidadeParaVisualizar.unidadePaiId && (
-                  <SheetDescription>
-                    Hierarquia: {getHierarquia(unidadeParaVisualizar)}
-                  </SheetDescription>
-                )}
+                <SheetDescription>
+                  Detalhes administrativos da Regional/Setor
+                </SheetDescription>
               </SheetHeader>
 
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <Card>
                   <CardHeader className="py-3">
-                    <CardTitle className="text-sm font-semibold">Informações Gerais</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Informações Administrativas</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
-                    {unidadeParaVisualizar.dirigente && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sede Hospedeira</span>
+                      <span className="font-semibold">{regionalParaVisualizar.hospedeiraNome}</span>
+                    </div>
+                    {regionalParaVisualizar.dirigente && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Dirigente</span>
-                        <span className="font-medium">{unidadeParaVisualizar.dirigente}</span>
-                      </div>
-                    )}
-                    {unidadeParaVisualizar.telefone && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Telefone</span>
-                        <span className="font-medium">{unidadeParaVisualizar.telefone}</span>
+                        <span className="font-semibold">{regionalParaVisualizar.dirigente}</span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total de Membros</span>
-                      <span className="font-medium">{unidadeParaVisualizar.totalMembros} membros</span>
+                      <span className="font-bold text-primary">{regionalParaVisualizar.totalMembros} membros</span>
                     </div>
                   </CardContent>
                 </Card>
 
-                {unidadeParaVisualizar.endereco && (
-                  <Card>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm font-semibold">Endereço</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                      {unidadeParaVisualizar.endereco.logradouro && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Logradouro</span>
-                          <span className="font-medium">
-                            {unidadeParaVisualizar.endereco.logradouro}
-                            {unidadeParaVisualizar.endereco.numero ? `, ${unidadeParaVisualizar.endereco.numero}` : ""}
-                          </span>
-                        </div>
-                      )}
-                      {unidadeParaVisualizar.endereco.complemento && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Complemento</span>
-                          <span className="font-medium">{unidadeParaVisualizar.endereco.complemento}</span>
-                        </div>
-                      )}
-                      {unidadeParaVisualizar.endereco.bairro && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Bairro</span>
-                          <span className="font-medium">{unidadeParaVisualizar.endereco.bairro}</span>
-                        </div>
-                      )}
-                      {unidadeParaVisualizar.endereco.cidade && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Cidade / Estado</span>
-                          <span className="font-medium">
-                            {unidadeParaVisualizar.endereco.cidade} - {unidadeParaVisualizar.endereco.estado || ""}
-                          </span>
-                        </div>
-                      )}
-                      {unidadeParaVisualizar.endereco.cep && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">CEP</span>
-                          <span className="font-medium">{unidadeParaVisualizar.endereco.cep}</span>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">Congregações Pertencentes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {regionalParaVisualizar.igrejasMembrosNomes.length === 0 ? (
+                      <p className="text-muted-foreground italic text-center py-4">
+                        Nenhuma congregação vinculada.
+                      </p>
+                    ) : (
+                      <ul className="list-disc list-inside space-y-1">
+                        {regionalParaVisualizar.igrejasMembrosNomes.map((nome, index) => (
+                          <li key={index} className="font-medium">{nome}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
-                <div className="flex justify-end gap-3 pt-4">
-                  {canManageUnidades && (
-                    <Button
-                      onClick={() => {
-                        const u = unidadeParaVisualizar;
-                        setUnidadeParaVisualizar(null);
-                        setUnidadeParaEditar(u);
-                      }}
-                    >
-                      Editar Unidade
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={() => setUnidadeParaVisualizar(null)}>
-                    Fechar
+              <div className="flex justify-end gap-3 pt-4">
+                {canManage && (
+                  <Button
+                    onClick={() => {
+                      const reg = regionalParaVisualizar;
+                      setRegionalParaVisualizar(null);
+                      setRegionalParaEditar(reg);
+                    }}
+                  >
+                    Editar
                   </Button>
-                </div>
+                )}
+                <Button variant="outline" onClick={() => setRegionalParaVisualizar(null)}>
+                  Fechar
+                </Button>
               </div>
             </div>
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Regional ou Setor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não removerá as congregações do sistema. Elas serão desvinculadas e
+              ficarão sem regional/setor associado até serem remapeadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Excluindo..." : "Confirmar Exclusão"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

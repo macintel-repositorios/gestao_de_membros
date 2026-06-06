@@ -91,7 +91,7 @@ const adminItems = [
     icon: Church,
   },
   {
-    title: "Unidades",
+    title: "Regional/Setor",
     href: "/unidades",
     icon: Building2,
   },
