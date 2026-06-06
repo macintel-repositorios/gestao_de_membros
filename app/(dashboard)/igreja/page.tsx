@@ -23,13 +23,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { UnidadeForm } from "@/components/unidades/unidade-form";
+import { IgrejaForm } from "@/components/igrejas/igreja-form";
 import {
   Select,
   SelectContent,
@@ -87,14 +88,6 @@ interface IgrejaComHierarquia extends Igreja {
   todasUnidades: UnidadeComContagem[];
 }
 
-interface NovaUnidadeForm {
-  nome: string;
-  tipo: TipoUnidade;
-  dirigente: string;
-  telefone: string;
-  unidadePaiId: string;
-}
-
 export default function GerenciarIgrejasPage() {
   const router = useRouter();
   const { usuario, nivelAcesso, igrejaId } = useAuth();
@@ -106,33 +99,15 @@ export default function GerenciarIgrejasPage() {
   const [expandedIgrejas, setExpandedIgrejas] = useState<Set<string>>(new Set());
   const [expandedUnidades, setExpandedUnidades] = useState<Set<string>>(new Set());
   
-  // Modal de nova unidade
-  const [novaUnidadeModal, setNovaUnidadeModal] = useState<{ 
-    open: boolean; 
-    igrejaId: string;
-    tipo?: TipoUnidade;
-    unidadePaiId?: string;
-  }>({ open: false, igrejaId: "" });
-  const [novaUnidadeForm, setNovaUnidadeForm] = useState<NovaUnidadeForm>({
-    nome: "",
-    tipo: "sede",
-    dirigente: "",
-    telefone: "",
-    unidadePaiId: "",
-  });
-  const [salvandoUnidade, setSalvandoUnidade] = useState(false);
+  // Sheet states
+  const [isNovoIgrejaOpen, setIsNovoIgrejaOpen] = useState(false);
+  const [igrejaParaEditarId, setIgrejaParaEditarId] = useState<string | null>(null);
+  
+  const [isNovaUnidadeOpen, setIsNovaUnidadeOpen] = useState(false);
+  const [novaUnidadeDefaults, setNovaUnidadeDefaults] = useState<{ tipo?: TipoUnidade; unidadePaiId?: string }>({});
+  const [unidadeParaEditarId, setUnidadeParaEditarId] = useState<string | null>(null);
 
-  // Modal de nova igreja
-  const [novaIgrejaModal, setNovaIgrejaModal] = useState(false);
-  const [novaIgrejaForm, setNovaIgrejaForm] = useState({
-    nome: "",
-    telefone: "",
-    cidade: "",
-    estado: "",
-  });
-  const [salvandoIgreja, setSalvandoIgreja] = useState(false);
-
-  // Verifica se o usuário tem permissão
+  // Checks user permission
   const isAdmin = nivelAcesso === "admin" || nivelAcesso === "full";
 
   useEffect(() => {
@@ -251,91 +226,9 @@ export default function GerenciarIgrejasPage() {
     }
   };
 
-  const handleSalvarNovaIgreja = async () => {
-    if (!novaIgrejaForm.nome.trim()) {
-      toast.error("Informe o nome da igreja");
-      return;
-    }
-
-    try {
-      setSalvandoIgreja(true);
-      const igrejasRef = getIgrejasCollection();
-      await addDoc(igrejasRef, {
-        nome: novaIgrejaForm.nome.trim(),
-        telefone: novaIgrejaForm.telefone.trim() || null,
-        endereco: {
-          cidade: novaIgrejaForm.cidade.trim() || null,
-          estado: novaIgrejaForm.estado.trim() || null,
-        },
-        tipo: "assembleia",
-        ativa: true,
-        criadoEm: Timestamp.now(),
-        atualizadoEm: Timestamp.now(),
-      });
-      
-      toast.success("Igreja criada com sucesso!");
-      setNovaIgrejaModal(false);
-      setNovaIgrejaForm({ nome: "", telefone: "", cidade: "", estado: "" });
-      await loadIgrejasComHierarquia();
-    } catch (error) {
-      console.error("Erro ao criar igreja:", error);
-      toast.error("Erro ao criar igreja");
-    } finally {
-      setSalvandoIgreja(false);
-    }
-  };
-
-  const handleSalvarNovaUnidade = async () => {
-    if (!novaUnidadeForm.nome.trim()) {
-      toast.error("Informe o nome da unidade");
-      return;
-    }
-
-    if (novaUnidadeForm.tipo === "congregacao" && !novaUnidadeForm.unidadePaiId) {
-      toast.error("Selecione a sede desta congregação");
-      return;
-    }
-
-    if (novaUnidadeForm.tipo === "subcongregacao" && !novaUnidadeForm.unidadePaiId) {
-      toast.error("Selecione a congregação desta subcongregação");
-      return;
-    }
-
-    try {
-      setSalvandoUnidade(true);
-      const unidadesRef = getUnidadesCollection(novaUnidadeModal.igrejaId);
-      await addDoc(unidadesRef, {
-        nome: novaUnidadeForm.nome.trim(),
-        tipo: novaUnidadeForm.tipo,
-        dirigente: novaUnidadeForm.dirigente.trim() || null,
-        telefone: novaUnidadeForm.telefone.trim() || null,
-        unidadePaiId: novaUnidadeForm.unidadePaiId || null,
-        ativa: true,
-        criadoEm: Timestamp.now(),
-        atualizadoEm: Timestamp.now(),
-      });
-      
-      toast.success(`${TIPOS_UNIDADE[novaUnidadeForm.tipo]} criada com sucesso!`);
-      setNovaUnidadeModal({ open: false, igrejaId: "" });
-      setNovaUnidadeForm({ nome: "", tipo: "sede", dirigente: "", telefone: "", unidadePaiId: "" });
-      await loadIgrejasComHierarquia();
-    } catch (error) {
-      console.error("Erro ao criar unidade:", error);
-      toast.error("Erro ao criar unidade");
-    } finally {
-      setSalvandoUnidade(false);
-    }
-  };
-
   const abrirModalNovaUnidade = (igrejaId: string, tipo?: TipoUnidade, unidadePaiId?: string) => {
-    setNovaUnidadeForm({
-      nome: "",
-      tipo: tipo || "sede",
-      dirigente: "",
-      telefone: "",
-      unidadePaiId: unidadePaiId || "",
-    });
-    setNovaUnidadeModal({ open: true, igrejaId, tipo, unidadePaiId });
+    setNovaUnidadeDefaults({ tipo, unidadePaiId });
+    setIsNovaUnidadeOpen(true);
   };
 
   const toggleIgreja = (id: string) => {
@@ -441,10 +334,8 @@ export default function GerenciarIgrejasPage() {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-              <Link href={`/unidades/${unidade.id}/editar`}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Link>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setUnidadeParaEditarId(unidade.id)}>
+              <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button 
               variant="ghost" 
@@ -503,7 +394,7 @@ export default function GerenciarIgrejasPage() {
             Crie e gerencie igrejas, sedes, congregações e subcongregações
           </p>
         </div>
-        <Button onClick={() => setNovaIgrejaModal(true)}>
+        <Button onClick={() => setIsNovoIgrejaOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Nova Igreja
         </Button>
@@ -643,11 +534,9 @@ export default function GerenciarIgrejasPage() {
                         <p className="text-sm font-medium">{igreja.totalMembros} membros</p>
                         <p className="text-xs text-muted-foreground">{igreja.totalUnidades} unidades</p>
                       </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/igrejas/${igreja.id}`}>
-                          <Pencil className="mr-2 h-3.5 w-3.5" />
-                          Editar
-                        </Link>
+                      <Button variant="outline" size="sm" onClick={() => setIgrejaParaEditarId(igreja.id)}>
+                        <Pencil className="mr-2 h-3.5 w-3.5" />
+                        Editar
                       </Button>
                       <Button
                         variant="outline"
@@ -704,159 +593,93 @@ export default function GerenciarIgrejasPage() {
         </div>
       )}
 
-      {/* Modal Nova Igreja */}
-      <Dialog open={novaIgrejaModal} onOpenChange={setNovaIgrejaModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nova Igreja</DialogTitle>
-            <DialogDescription>
+      {/* Drawer: Nova Igreja */}
+      <Sheet open={isNovoIgrejaOpen} onOpenChange={setIsNovoIgrejaOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle>Nova Igreja</SheetTitle>
+            <SheetDescription>
               Cadastre uma nova igreja no sistema
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="igreja-nome">Nome da Igreja *</Label>
-              <Input
-                id="igreja-nome"
-                placeholder="Ex: Igreja Assembleia de Deus"
-                value={novaIgrejaForm.nome}
-                onChange={(e) => setNovaIgrejaForm(prev => ({ ...prev, nome: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="igreja-telefone">Telefone</Label>
-              <Input
-                id="igreja-telefone"
-                placeholder="(00) 00000-0000"
-                value={novaIgrejaForm.telefone}
-                onChange={(e) => setNovaIgrejaForm(prev => ({ ...prev, telefone: e.target.value }))}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="igreja-cidade">Cidade</Label>
-                <Input
-                  id="igreja-cidade"
-                  placeholder="Cidade"
-                  value={novaIgrejaForm.cidade}
-                  onChange={(e) => setNovaIgrejaForm(prev => ({ ...prev, cidade: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="igreja-estado">Estado</Label>
-                <Input
-                  id="igreja-estado"
-                  placeholder="UF"
-                  maxLength={2}
-                  value={novaIgrejaForm.estado}
-                  onChange={(e) => setNovaIgrejaForm(prev => ({ ...prev, estado: e.target.value.toUpperCase() }))}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNovaIgrejaModal(false)} disabled={salvandoIgreja}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSalvarNovaIgreja} disabled={salvandoIgreja}>
-              {salvandoIgreja ? "Salvando..." : "Criar Igreja"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </SheetDescription>
+          </SheetHeader>
+          <IgrejaForm
+            onSuccess={() => {
+              setIsNovoIgrejaOpen(false);
+              loadIgrejasComHierarquia();
+            }}
+            onCancel={() => setIsNovoIgrejaOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
 
-      {/* Modal Nova Unidade */}
-      <Dialog open={novaUnidadeModal.open} onOpenChange={(open) => setNovaUnidadeModal(prev => ({ ...prev, open }))}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {novaUnidadeModal.tipo ? `Nova ${TIPOS_UNIDADE[novaUnidadeModal.tipo]}` : "Nova Unidade"}
-            </DialogTitle>
-            <DialogDescription>
-              Adicione uma nova unidade à hierarquia da igreja
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="unidade-tipo">Tipo *</Label>
-              <Select 
-                value={novaUnidadeForm.tipo} 
-                onValueChange={(value: TipoUnidade) => {
-                  setNovaUnidadeForm(prev => ({ ...prev, tipo: value, unidadePaiId: "" }));
+      {/* Drawer: Editar Igreja */}
+      <Sheet open={!!igrejaParaEditarId} onOpenChange={(open) => !open && setIgrejaParaEditarId(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {igrejaParaEditarId && (
+            <>
+              <SheetHeader className="mb-6">
+                <SheetTitle>Editar Igreja</SheetTitle>
+                <SheetDescription>
+                  Atualize os dados da igreja
+                </SheetDescription>
+              </SheetHeader>
+              <IgrejaForm
+                igrejaId={igrejaParaEditarId}
+                onSuccess={() => {
+                  setIgrejaParaEditarId(null);
+                  loadIgrejasComHierarquia();
                 }}
-                disabled={!!novaUnidadeModal.tipo}
-              >
-                <SelectTrigger id="unidade-tipo">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sede">Sede</SelectItem>
-                  <SelectItem value="congregacao">Congregação</SelectItem>
-                  <SelectItem value="subcongregacao">Subcongregação</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                onCancel={() => setIgrejaParaEditarId(null)}
+              />
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
-            {(novaUnidadeForm.tipo === "congregacao" || novaUnidadeForm.tipo === "subcongregacao") && (
-              <div className="space-y-2">
-                <Label htmlFor="unidade-pai">
-                  {novaUnidadeForm.tipo === "congregacao" ? "Sede *" : "Congregação *"}
-                </Label>
-                <Select 
-                  value={novaUnidadeForm.unidadePaiId} 
-                  onValueChange={(value) => setNovaUnidadeForm(prev => ({ ...prev, unidadePaiId: value }))}
-                  disabled={!!novaUnidadeModal.unidadePaiId}
-                >
-                  <SelectTrigger id="unidade-pai">
-                    <SelectValue placeholder={`Selecione a ${novaUnidadeForm.tipo === "congregacao" ? "sede" : "congregação"}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getUnidadesPai(novaUnidadeModal.igrejaId, novaUnidadeForm.tipo).map(u => (
-                      <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+      {/* Drawer: Nova Unidade */}
+      <Sheet open={isNovaUnidadeOpen} onOpenChange={setIsNovaUnidadeOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle>Nova Unidade</SheetTitle>
+            <SheetDescription>
+              Adicione uma nova unidade à hierarquia da igreja
+            </SheetDescription>
+          </SheetHeader>
+          <UnidadeForm
+            defaultTipo={novaUnidadeDefaults.tipo}
+            defaultUnidadePaiId={novaUnidadeDefaults.unidadePaiId}
+            onSuccess={() => {
+              setIsNovaUnidadeOpen(false);
+              loadIgrejasComHierarquia();
+            }}
+            onCancel={() => setIsNovaUnidadeOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
 
-            <div className="space-y-2">
-              <Label htmlFor="unidade-nome">Nome *</Label>
-              <Input
-                id="unidade-nome"
-                placeholder="Ex: Congregação Jardim das Flores"
-                value={novaUnidadeForm.nome}
-                onChange={(e) => setNovaUnidadeForm(prev => ({ ...prev, nome: e.target.value }))}
+      {/* Drawer: Editar Unidade */}
+      <Sheet open={!!unidadeParaEditarId} onOpenChange={(open) => !open && setUnidadeParaEditarId(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {unidadeParaEditarId && (
+            <>
+              <SheetHeader className="mb-6">
+                <SheetTitle>Editar Unidade</SheetTitle>
+                <SheetDescription>
+                  Atualize os dados da unidade
+                </SheetDescription>
+              </SheetHeader>
+              <UnidadeForm
+                unidadeId={unidadeParaEditarId}
+                onSuccess={() => {
+                  setUnidadeParaEditarId(null);
+                  loadIgrejasComHierarquia();
+                }}
+                onCancel={() => setUnidadeParaEditarId(null)}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="unidade-dirigente">Dirigente/Pastor</Label>
-              <Input
-                id="unidade-dirigente"
-                placeholder="Nome do dirigente"
-                value={novaUnidadeForm.dirigente}
-                onChange={(e) => setNovaUnidadeForm(prev => ({ ...prev, dirigente: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="unidade-telefone">Telefone</Label>
-              <Input
-                id="unidade-telefone"
-                placeholder="(00) 00000-0000"
-                value={novaUnidadeForm.telefone}
-                onChange={(e) => setNovaUnidadeForm(prev => ({ ...prev, telefone: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNovaUnidadeModal({ open: false, igrejaId: "" })} disabled={salvandoUnidade}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSalvarNovaUnidade} disabled={salvandoUnidade}>
-              {salvandoUnidade ? "Salvando..." : "Criar Unidade"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Alert Dialog Excluir Igreja */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

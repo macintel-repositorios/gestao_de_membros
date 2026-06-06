@@ -51,44 +51,55 @@ import {
   ShieldCheck
 } from "lucide-react";
 import Link from "next/link";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { UsuarioForm } from "@/components/usuarios/usuario-form";
 
 export default function UsuariosPage() {
-  const { igrejaId, usuario: currentUser, todasUnidades } = useAuth();
+  const { igrejaId, usuario: currentUser, todasUnidades, unidadesAcessiveis } = useAuth();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function carregarUsuarios() {
-      if (!igrejaId) {
-        setLoading(false);
-        return;
-      }
+  const [usuarioParaEditar, setUsuarioParaEditar] = useState<Usuario | null>(null);
+  const [isNovoOpen, setIsNovoOpen] = useState(false);
 
-      try {
-        const usuariosRef = collection(db, "usuarios");
-        const q = query(usuariosRef, where("igrejaId", "==", igrejaId));
-        const snapshot = await getDocs(q);
-        
-        const usuariosData: Usuario[] = [];
-        snapshot.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          usuariosData.push({
-            uid: docSnap.id,
-            ...data,
-          } as Usuario);
-        });
-        
-        setUsuarios(usuariosData);
-      } catch (error) {
-        console.error("Erro ao carregar usuários:", error);
-        toast.error("Erro ao carregar usuários");
-      } finally {
-        setLoading(false);
-      }
+  const carregarUsuarios = async () => {
+    if (!igrejaId) {
+      setLoading(false);
+      return;
     }
 
+    try {
+      const usuariosRef = collection(db!, "usuarios");
+      const q = query(usuariosRef, where("igrejaId", "==", igrejaId));
+      const snapshot = await getDocs(q);
+      
+      const usuariosData: Usuario[] = [];
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        usuariosData.push({
+          uid: docSnap.id,
+          ...data,
+        } as Usuario);
+      });
+      
+      setUsuarios(usuariosData);
+    } catch (error) {
+      console.error("Erro ao carregar usuários:", error);
+      toast.error("Erro ao carregar usuários");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     carregarUsuarios();
   }, [igrejaId]);
 
@@ -129,6 +140,10 @@ export default function UsuariosPage() {
   };
 
   const filteredUsuarios = usuarios.filter(usr => {
+    // Apenas administradores "full" podem ver usuários de todas as unidades da igreja
+    if (currentUser?.nivelAcesso !== "full" && usr.unidadeId && !unidadesAcessiveis.includes(usr.unidadeId)) {
+      return false;
+    }
     const nome = usr.nome || "";
     const telefone = usr.telefone || "";
     const termo = searchTerm.toLowerCase();
@@ -164,11 +179,9 @@ export default function UsuariosPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button asChild>
-            <Link href="/usuarios/novo">
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Usuário
-            </Link>
+          <Button onClick={() => setIsNovoOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Usuário
           </Button>
         )}
       </div>
@@ -263,11 +276,9 @@ export default function UsuariosPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem asChild>
-                              <Link href={`/usuarios/${usr.uid}/editar`}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Editar
-                              </Link>
+                            <DropdownMenuItem onClick={() => setUsuarioParaEditar(usr)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Editar
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleToggleAtivo(usr)}>
                               {usr.ativo ? (
@@ -319,6 +330,49 @@ export default function UsuariosPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Drawer: Novo Usuário */}
+      <Sheet open={isNovoOpen} onOpenChange={setIsNovoOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle>Novo Usuário</SheetTitle>
+            <SheetDescription>
+              Cadastre um novo usuário para acessar o sistema
+            </SheetDescription>
+          </SheetHeader>
+          <UsuarioForm
+            onSuccess={() => {
+              setIsNovoOpen(false);
+              carregarUsuarios();
+            }}
+            onCancel={() => setIsNovoOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer: Editar Usuário */}
+      <Sheet open={!!usuarioParaEditar} onOpenChange={(open) => !open && setUsuarioParaEditar(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {usuarioParaEditar && (
+            <>
+              <SheetHeader className="mb-6">
+                <SheetTitle>Editar Usuário</SheetTitle>
+                <SheetDescription>
+                  Atualize os dados do usuário
+                </SheetDescription>
+              </SheetHeader>
+              <UsuarioForm
+                userId={usuarioParaEditar.uid}
+                onSuccess={() => {
+                  setUsuarioParaEditar(null);
+                  carregarUsuarios();
+                }}
+                onCancel={() => setUsuarioParaEditar(null)}
+              />
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

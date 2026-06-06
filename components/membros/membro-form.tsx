@@ -108,9 +108,10 @@ type MembroFormData = z.infer<typeof membroSchema>;
 interface MembroFormProps {
   membro?: Membro;
   unidadeIdParam?: string; // Para edição, passa a unidade do membro
+  onSuccess?: () => void;
 }
 
-export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
+export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProps) {
   const router = useRouter();
   const { user, igrejaId, unidadeId, unidadesAcessiveis, todasUnidades, temAcessoTotal, loading: authLoading } = useAuth();
   // Unidades disponíveis para seleção
@@ -580,7 +581,11 @@ export function MembroForm({ membro, unidadeIdParam }: MembroFormProps) {
         }
       }
 
-      router.push("/membros");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push("/membros");
+      }
     } catch (error) {
       console.error("Erro ao salvar membro:", error);
       toast.error("Erro ao salvar membro");

@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { NIVEIS_ACESSO } from "@/lib/types";
 import { UnidadeSelector } from "./unidade-selector";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const menuItems = [
   {
@@ -113,6 +114,19 @@ export function AppSidebar() {
   const { usuario, signOut } = useAuth();
 
   const isAdmin = usuario?.nivelAcesso === "admin" || usuario?.nivelAcesso === "full";
+  const level = usuario?.nivelAcesso;
+
+  const visivelParaPapel = (title: string): boolean => {
+    if (!level) return title === "Dashboard";
+    if (level === "admin" || level === "full") return true;
+    if (level === "lider") {
+      return ["Dashboard", "Famílias", "Grupos", "Aniversariantes", "Acompanhamento", "Relatórios"].includes(title);
+    }
+    if (level === "user") {
+      return ["Dashboard", "Visitantes", "Mapa", "Famílias"].includes(title);
+    }
+    return false;
+  };
 
   return (
     <Sidebar>
@@ -140,7 +154,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Menu Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
+              {menuItems.filter(item => visivelParaPapel(item.title)).map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild
@@ -202,6 +216,7 @@ export function AppSidebar() {
                 : "Carregando..."}
             </span>
           </div>
+          <ThemeToggle />
           <Button
             variant="ghost"
             size="icon"

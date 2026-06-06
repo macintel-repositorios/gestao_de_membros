@@ -28,6 +28,14 @@ import {
   TipoUnidade,
   TIPOS_UNIDADE,
 } from "@/lib/types";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { UnidadeForm } from "@/components/unidades/unidade-form";
 
 const CORES_TIPO_UNIDADE: Record<TipoUnidade, string> = {
   sede: "#16a34a",
@@ -44,6 +52,10 @@ export default function UnidadesPage() {
   const [unidades, setUnidades] = useState<UnidadeComContagem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const [unidadeParaVisualizar, setUnidadeParaVisualizar] = useState<UnidadeComContagem | null>(null);
+  const [unidadeParaEditar, setUnidadeParaEditar] = useState<UnidadeComContagem | null>(null);
+  const [isNovaOpen, setIsNovaOpen] = useState(false);
 
   const canManageUnidades = nivelAcesso === "full" || nivelAcesso === "admin";
 
@@ -159,18 +171,14 @@ export default function UnidadesPage() {
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-              <Link href={`/unidades/${unidade.id}`}>
-                <Eye className="h-4 w-4" />
-                <span className="sr-only">Ver detalhes</span>
-              </Link>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setUnidadeParaVisualizar(unidade)}>
+              <Eye className="h-4 w-4" />
+              <span className="sr-only">Ver detalhes</span>
             </Button>
             {canManageUnidades && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                <Link href={`/unidades/${unidade.id}/editar`}>
-                  <Edit className="h-4 w-4" />
-                  <span className="sr-only">Editar</span>
-                </Link>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setUnidadeParaEditar(unidade)}>
+                <Edit className="h-4 w-4" />
+                <span className="sr-only">Editar</span>
               </Button>
             )}
           </div>
@@ -244,11 +252,9 @@ export default function UnidadesPage() {
           </p>
         </div>
         {canManageUnidades && (
-          <Button asChild>
-            <Link href="/unidades/nova">
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Unidade
-            </Link>
+          <Button onClick={() => setIsNovaOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Unidade
           </Button>
         )}
       </div>
@@ -352,11 +358,9 @@ export default function UnidadesPage() {
                 Comece cadastrando a primeira unidade (sede).
               </EmptyDescription>
               {canManageUnidades && (
-                <Button asChild className="mt-4">
-                  <Link href="/unidades/nova">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Cadastrar Unidade
-                  </Link>
+                <Button onClick={() => setIsNovaOpen(true)} className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Cadastrar Unidade
                 </Button>
               )}
             </Empty>
@@ -389,6 +393,159 @@ export default function UnidadesPage() {
           )}
         </div>
       )}
+
+      {/* Drawer: Nova Unidade */}
+      <Sheet open={isNovaOpen} onOpenChange={setIsNovaOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle>Nova Unidade</SheetTitle>
+            <SheetDescription>
+              Cadastre uma nova sede, congregação ou subcongregação
+            </SheetDescription>
+          </SheetHeader>
+          <UnidadeForm
+            onSuccess={() => setIsNovaOpen(false)}
+            onCancel={() => setIsNovaOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer: Editar Unidade */}
+      <Sheet open={!!unidadeParaEditar} onOpenChange={(open) => !open && setUnidadeParaEditar(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {unidadeParaEditar && (
+            <>
+              <SheetHeader className="mb-6">
+                <SheetTitle>Editar Unidade</SheetTitle>
+                <SheetDescription>
+                  Atualize os dados da unidade: {unidadeParaEditar.nome}
+                </SheetDescription>
+              </SheetHeader>
+              <UnidadeForm
+                unidadeId={unidadeParaEditar.id}
+                onSuccess={() => setUnidadeParaEditar(null)}
+                onCancel={() => setUnidadeParaEditar(null)}
+              />
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer: Visualizar Detalhes */}
+      <Sheet open={!!unidadeParaVisualizar} onOpenChange={(open) => !open && setUnidadeParaVisualizar(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {unidadeParaVisualizar && (
+            <div className="space-y-6">
+              <SheetHeader>
+                <div className="flex items-center gap-2">
+                  <SheetTitle>{unidadeParaVisualizar.nome}</SheetTitle>
+                  <Badge
+                    style={{
+                      backgroundColor: CORES_TIPO_UNIDADE[unidadeParaVisualizar.tipo],
+                      color: "white",
+                    }}
+                  >
+                    {TIPOS_UNIDADE[unidadeParaVisualizar.tipo]}
+                  </Badge>
+                </div>
+                {unidadeParaVisualizar.unidadePaiId && (
+                  <SheetDescription>
+                    Hierarquia: {getHierarquia(unidadeParaVisualizar)}
+                  </SheetDescription>
+                )}
+              </SheetHeader>
+
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">Informações Gerais</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {unidadeParaVisualizar.dirigente && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Dirigente</span>
+                        <span className="font-medium">{unidadeParaVisualizar.dirigente}</span>
+                      </div>
+                    )}
+                    {unidadeParaVisualizar.telefone && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Telefone</span>
+                        <span className="font-medium">{unidadeParaVisualizar.telefone}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total de Membros</span>
+                      <span className="font-medium">{unidadeParaVisualizar.totalMembros} membros</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {unidadeParaVisualizar.endereco && (
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm font-semibold">Endereço</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      {unidadeParaVisualizar.endereco.logradouro && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Logradouro</span>
+                          <span className="font-medium">
+                            {unidadeParaVisualizar.endereco.logradouro}
+                            {unidadeParaVisualizar.endereco.numero ? `, ${unidadeParaVisualizar.endereco.numero}` : ""}
+                          </span>
+                        </div>
+                      )}
+                      {unidadeParaVisualizar.endereco.complemento && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Complemento</span>
+                          <span className="font-medium">{unidadeParaVisualizar.endereco.complemento}</span>
+                        </div>
+                      )}
+                      {unidadeParaVisualizar.endereco.bairro && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Bairro</span>
+                          <span className="font-medium">{unidadeParaVisualizar.endereco.bairro}</span>
+                        </div>
+                      )}
+                      {unidadeParaVisualizar.endereco.cidade && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Cidade / Estado</span>
+                          <span className="font-medium">
+                            {unidadeParaVisualizar.endereco.cidade} - {unidadeParaVisualizar.endereco.estado || ""}
+                          </span>
+                        </div>
+                      )}
+                      {unidadeParaVisualizar.endereco.cep && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">CEP</span>
+                          <span className="font-medium">{unidadeParaVisualizar.endereco.cep}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="flex justify-end gap-3 pt-4">
+                  {canManageUnidades && (
+                    <Button
+                      onClick={() => {
+                        const u = unidadeParaVisualizar;
+                        setUnidadeParaVisualizar(null);
+                        setUnidadeParaEditar(u);
+                      }}
+                    >
+                      Editar Unidade
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={() => setUnidadeParaVisualizar(null)}>
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

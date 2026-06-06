@@ -161,8 +161,8 @@ export async function getUnidadesAcessiveis(
     return snapshot.docs.map(doc => doc.id);
   }
   
-  // User: apenas sua unidade
-  if (nivelAcesso === "user") {
+  // User / Lider: apenas sua unidade
+  if (nivelAcesso === "user" || nivelAcesso === "lider") {
     return [unidadeId];
   }
   

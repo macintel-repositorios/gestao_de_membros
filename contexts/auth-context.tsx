@@ -64,8 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const unidades = await carregarTodasUnidades(igrejaId);
         setTodasUnidades(unidades);
 
-        // Se o usuário é "full" ou "admin" ou não tem unidadeId, dá acesso a todas
-        if (usuario.nivelAcesso === "full" || usuario.nivelAcesso === "admin" || !usuario.unidadeId) {
+        // Se o usuário é "full" ou não tem unidadeId, dá acesso a todas
+        if (usuario.nivelAcesso === "full" || !usuario.unidadeId) {
           const todasIds = unidades.map(u => u.id);
           setUnidadesAcessiveis(todasIds);
           setUnidadeAtual(unidades[0] || null);
@@ -140,6 +140,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           
           return;
+        }
+
+        // Se não encontrou pelo UID, tenta buscar por telefone (pré-cadastro)
+        if (firebaseUser.phoneNumber) {
+          const { doc, getDoc, setDoc, deleteDoc, Timestamp } = await import("firebase/firestore");
+          const userPhoneDocRef = doc(db, "usuarios", firebaseUser.phoneNumber);
+          const docSnapPhone = await getDoc(userPhoneDocRef);
+
+          if (docSnapPhone.exists()) {
+            const phoneData = docSnapPhone.data();
+            
+            // Cria o novo documento associado ao UID
+            await setDoc(userDocRefOld, {
+              ...phoneData,
+              uid: firebaseUser.uid,
+              dataAtualizacao: Timestamp.now()
+            });
+
+            // Remove o documento temporário do telefone
+            await deleteDoc(userPhoneDocRef);
+
+            const userData = { uid: firebaseUser.uid, ...phoneData } as Usuario;
+            setUsuario(userData);
+            setIgrejaId(userData.igrejaId || null);
+            setUnidadeId(userData.unidadeId || null);
+            setNivelAcesso(userData.nivelAcesso || null);
+            setLoading(false);
+
+            // Configura listener no novo UID
+            unsubscribeUser = onSnapshot(userDocRefOld, (docSnap) => {
+              if (docSnap.exists()) {
+                const uData = { uid: docSnap.id, ...docSnap.data() } as Usuario;
+                setUsuario(uData);
+                setIgrejaId(uData.igrejaId || null);
+                setUnidadeId(uData.unidadeId || null);
+                setNivelAcesso(uData.nivelAcesso || null);
+              }
+            });
+
+            return;
+          }
         }
         
         // Se não encontrou na raiz, usuário não configurado corretamente

@@ -37,9 +37,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/auth-context";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { FamiliaForm } from "@/components/familias/familia-form";
 import {
   Home,
   Search,
@@ -51,9 +60,15 @@ import {
   Users,
   Baby,
   Building2,
+  Calendar,
+  User,
+  Phone,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Familia, PARENTESCOS } from "@/lib/types";
+import { Familia, PARENTESCOS, SEXOS } from "@/lib/types";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface FamiliaComUnidade extends Familia {
   unidadeId: string;
@@ -67,7 +82,90 @@ export default function FamiliasPage() {
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [familiaToDeactivate, setFamiliaToDeactivate] = useState<FamiliaComUnidade | null>(null);
 
+  // Estados para Sheets (Visualizar e Editar)
+  const [familiaParaVisualizar, setFamiliaParaVisualizar] = useState<FamiliaComUnidade | null>(null);
+  const [familiaParaEditar, setFamiliaParaEditar] = useState<FamiliaComUnidade | null>(null);
+  const [responsavel1, setResponsavel1] = useState<any | null>(null);
+  const [responsavel2, setResponsavel2] = useState<any | null>(null);
+  const [loadingResponsaveis, setLoadingResponsaveis] = useState(false);
+
   const canEdit = nivelAcesso === "admin" || nivelAcesso === "full";
+
+  // Carrega responsáveis dinamicamente ao selecionar família para visualizar
+  useEffect(() => {
+    if (!igrejaId || !familiaParaVisualizar) {
+      setResponsavel1(null);
+      setResponsavel2(null);
+      return;
+    }
+
+    const loadResponsaveis = async () => {
+      setLoadingResponsaveis(true);
+      try {
+        const { getDoc } = await import("firebase/firestore");
+        const { getMembroDoc } = await import("@/lib/firestore");
+
+        // Responsável 1
+        if (familiaParaVisualizar.responsavel1Id) {
+          for (const unidadeId of unidadesAcessiveis) {
+            try {
+              const docRef = getMembroDoc(igrejaId, unidadeId, familiaParaVisualizar.responsavel1Id);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                const data = docSnap.data();
+                setResponsavel1({
+                  id: docSnap.id,
+                  nome: data.nome,
+                  telefone: data.telefone,
+                  fotoUrl: data.fotoUrl,
+                  unidadeId,
+                });
+                break;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+
+        // Responsável 2
+        if (familiaParaVisualizar.responsavel2Id) {
+          for (const unidadeId of unidadesAcessiveis) {
+            try {
+              const docRef = getMembroDoc(igrejaId, unidadeId, familiaParaVisualizar.responsavel2Id);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                const data = docSnap.data();
+                setResponsavel2({
+                  id: docSnap.id,
+                  nome: data.nome,
+                  telefone: data.telefone,
+                  fotoUrl: data.fotoUrl,
+                  unidadeId,
+                });
+                break;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao carregar responsáveis da família:", error);
+      } finally {
+        setLoadingResponsaveis(false);
+      }
+    };
+
+    loadResponsaveis();
+  }, [igrejaId, familiaParaVisualizar, unidadesAcessiveis]);
+
+  const formatPhone = (phone: string) => {
+    if (phone?.length === 11) {
+      return `(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`;
+    }
+    return phone || "-";
+  };
 
   useEffect(() => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
@@ -269,19 +367,19 @@ export default function FamiliasPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/familias/${familia.id}?unidade=${familia.unidadeId}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Visualizar
-                        </Link>
+                      <DropdownMenuItem
+                        onClick={() => setFamiliaParaVisualizar(familia)}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Visualizar
                       </DropdownMenuItem>
                       {canEdit && (
                         <>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/familias/${familia.id}/editar?unidade=${familia.unidadeId}`}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </Link>
+                          <DropdownMenuItem
+                            onClick={() => setFamiliaParaEditar(familia)}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
@@ -387,6 +485,180 @@ export default function FamiliasPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sheet para Visualizar Família */}
+      <Sheet open={!!familiaParaVisualizar} onOpenChange={(open) => !open && setFamiliaParaVisualizar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {familiaParaVisualizar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Home className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold">{familiaParaVisualizar.nome}</SheetTitle>
+                    <SheetDescription>
+                      Cadastrada em {familiaParaVisualizar.dataCriacao && format(familiaParaVisualizar.dataCriacao.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                    </SheetDescription>
+                  </div>
+                </div>
+              </SheetHeader>
+
+              <Separator />
+
+              {/* Responsáveis */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Responsáveis
+                </h3>
+                {loadingResponsaveis ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {/* Responsável 1 */}
+                    <div className="flex items-start gap-3 p-3 border rounded-lg">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={responsavel1?.fotoUrl || undefined} />
+                        <AvatarFallback className="text-sm">
+                          {getInitials(familiaParaVisualizar.responsavel1Nome)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 space-y-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{familiaParaVisualizar.responsavel1Nome}</div>
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">Responsável 1</Badge>
+                        {responsavel1?.telefone && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground pt-1">
+                            <Phone className="h-3 w-3" />
+                            <a href={`tel:+55${responsavel1.telefone}`} className="hover:underline">
+                              {formatPhone(responsavel1.telefone)}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Responsável 2 */}
+                    {familiaParaVisualizar.responsavel2Nome ? (
+                      <div className="flex items-start gap-3 p-3 border rounded-lg">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={responsavel2?.fotoUrl || undefined} />
+                          <AvatarFallback className="text-sm">
+                            {getInitials(familiaParaVisualizar.responsavel2Nome)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 space-y-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{familiaParaVisualizar.responsavel2Nome}</div>
+                          <Badge variant="secondary" className="text-[10px] h-5 px-1.5">Responsável 2</Badge>
+                          {responsavel2?.telefone && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground pt-1">
+                              <Phone className="h-3 w-3" />
+                              <a href={`tel:+55${responsavel2.telefone}`} className="hover:underline">
+                                {formatPhone(responsavel2.telefone)}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center p-3 border rounded-lg border-dashed text-xs text-muted-foreground">
+                        <User className="mr-1.5 h-3.5 w-3.5" />
+                        Sem segundo responsável
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Dependentes */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Baby className="h-4 w-4" />
+                  Dependentes
+                </h3>
+                {familiaParaVisualizar.dependentes && familiaParaVisualizar.dependentes.length > 0 ? (
+                  <div className="space-y-2">
+                    {familiaParaVisualizar.dependentes.map((dep) => (
+                      <div key={dep.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">
+                            {getInitials(dep.nome)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium text-sm truncate">{dep.nome}</span>
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                              {PARENTESCOS[dep.parentesco]}
+                            </Badge>
+                            {dep.membroVinculadoId && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                                Vinculado
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                            {dep.dataNascimento && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {format(dep.dataNascimento.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                              </span>
+                            )}
+                            {dep.sexo && (
+                              <span>{SEXOS[dep.sexo]}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-4 border rounded-lg border-dashed">
+                    Nenhum dependente cadastrado.
+                  </p>
+                )}
+              </div>
+
+              {/* Observações */}
+              {familiaParaVisualizar.observacoes && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Observações</h3>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground bg-muted/40 p-3 rounded-lg border">
+                    {familiaParaVisualizar.observacoes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Editar Família */}
+      <Sheet open={!!familiaParaEditar} onOpenChange={(open) => !open && setFamiliaParaEditar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {familiaParaEditar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <SheetTitle className="text-2xl font-bold">Editar Família</SheetTitle>
+                <SheetDescription>
+                  Atualize os dados e membros da {familiaParaEditar.nome}
+                </SheetDescription>
+              </SheetHeader>
+              <FamiliaForm
+                familia={familiaParaEditar}
+                unidadeIdParam={familiaParaEditar.unidadeId}
+                onSuccess={() => {
+                  setFamiliaParaEditar(null);
+                  toast.success("Família atualizada com sucesso!");
+                }}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

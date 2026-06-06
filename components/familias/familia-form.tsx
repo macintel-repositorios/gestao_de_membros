@@ -86,6 +86,7 @@ type FamiliaFormData = z.infer<typeof familiaSchema>;
 interface FamiliaFormProps {
   familia?: Familia;
   unidadeIdParam?: string;
+  onSuccess?: () => void;
 }
 
 interface MembroSimples {
@@ -95,7 +96,7 @@ interface MembroSimples {
   unidadeId: string;
 }
 
-export function FamiliaForm({ familia, unidadeIdParam }: FamiliaFormProps) {
+export function FamiliaForm({ familia, unidadeIdParam, onSuccess }: FamiliaFormProps) {
   const router = useRouter();
   const { user, igrejaId, unidadeId, unidadesAcessiveis, todasUnidades } = useAuth();
   
@@ -297,7 +298,11 @@ export function FamiliaForm({ familia, unidadeIdParam }: FamiliaFormProps) {
         toast.success("Família cadastrada com sucesso!");
       }
 
-      router.push("/familias");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push("/familias");
+      }
     } catch (error) {
       console.error("Erro ao salvar família:", error);
       toast.error("Erro ao salvar família");

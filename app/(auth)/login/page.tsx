@@ -7,7 +7,7 @@ import {
   ConfirmationResult,
   RecaptchaVerifier,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, Timestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -196,7 +196,30 @@ export default function LoginPage() {
 
       // Check if user exists in Firestore
       try {
-        const userDoc = await getDoc(doc(db, "usuarios", firebaseUser.uid));
+        let userDocRef = doc(db, "usuarios", firebaseUser.uid);
+        let userDoc = await getDoc(userDocRef);
+
+        if (!userDoc.exists() && firebaseUser.phoneNumber) {
+          const userPhoneDocRef = doc(db, "usuarios", firebaseUser.phoneNumber);
+          const docSnapPhone = await getDoc(userPhoneDocRef);
+
+          if (docSnapPhone.exists()) {
+            const phoneData = docSnapPhone.data();
+            
+            // Migrate to UID document
+            await setDoc(userDocRef, {
+              ...phoneData,
+              uid: firebaseUser.uid,
+              dataAtualizacao: Timestamp.now()
+            });
+
+            // Delete temporary phone document
+            await deleteDoc(userPhoneDocRef);
+
+            // Refetch newly created user document
+            userDoc = await getDoc(userDocRef);
+          }
+        }
 
         if (!userDoc.exists()) {
           // New user - need to collect name

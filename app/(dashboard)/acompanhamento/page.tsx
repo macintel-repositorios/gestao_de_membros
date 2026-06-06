@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { query, orderBy, getDocs, limit } from "firebase/firestore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { db } from "@/lib/firebase";
+import { COLLECTIONS } from "@/lib/firestore";
+import { deleteDoc, doc, query, orderBy, getDocs, limit } from "firebase/firestore";
 import { getAcompanhamentosCollection } from "@/lib/firestore";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +32,15 @@ import {
 } from "@/components/ui/select";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { AcompanhamentoForm } from "@/components/acompanhamento/acompanhamento-form";
+import { Separator } from "@/components/ui/separator";
+import {
   Plus,
   Search,
   Home,
@@ -30,6 +51,12 @@ import {
   User,
   ChevronRight,
   HeartHandshake,
+  Clock,
+  Building2,
+  Phone,
+  MapPin,
+  CalendarClock,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -54,43 +81,62 @@ export default function AcompanhamentoPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTipo, setFilterTipo] = useState<TipoAcompanhamento | "todos">("todos");
+  
+  const [acompParaVisualizar, setAcompParaVisualizar] = useState<Acompanhamento | null>(null);
+  const [isNovoOpen, setIsNovoOpen] = useState(false);
 
   const canCreate = usuario?.nivelAcesso === "full" || 
                     usuario?.nivelAcesso === "admin" || 
                     usuario?.nivelAcesso === "user";
 
-  useEffect(() => {
+  const canDelete = usuario?.nivelAcesso === "admin" || usuario?.nivelAcesso === "full";
+
+  const loadAcompanhamentos = async () => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
       setLoading(false);
       return;
     }
-
-    const loadAcompanhamentos = async () => {
-      try {
-        const data: Acompanhamento[] = [];
-        
-        for (const unidadeId of unidadesAcessiveis) {
-          const acompRef = getAcompanhamentosCollection(igrejaId, unidadeId);
-          const q = query(acompRef, orderBy("data", "desc"), limit(50));
-          const snapshot = await getDocs(q);
-          snapshot.forEach((docSnap) => {
-            data.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
-          });
-        }
-        
-        // Sort by date descending
-        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
-        
-        setAcompanhamentos(data);
-      } catch (error) {
-        console.error("Erro ao carregar acompanhamentos:", error);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    try {
+      const data: Acompanhamento[] = [];
+      
+      for (const unidadeId of unidadesAcessiveis) {
+        const acompRef = getAcompanhamentosCollection(igrejaId, unidadeId);
+        const q = query(acompRef, orderBy("data", "desc"), limit(50));
+        const snapshot = await getDocs(q);
+        snapshot.forEach((docSnap) => {
+          data.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
+        });
       }
-    };
+      
+      // Sort by date descending
+      data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+      
+      setAcompanhamentos(data);
+    } catch (error) {
+      console.error("Erro ao carregar acompanhamentos:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadAcompanhamentos();
   }, [igrejaId, unidadesAcessiveis]);
+
+  const handleDelete = async (acomp: Acompanhamento) => {
+    if (!acomp || !igrejaId) return;
+
+    try {
+      await deleteDoc(doc(db!, COLLECTIONS.IGREJAS, igrejaId, COLLECTIONS.UNIDADES, acomp.unidadeId, COLLECTIONS.ACOMPANHAMENTOS, acomp.id));
+      toast.success("Acompanhamento excluído com sucesso");
+      setAcompanhamentos((prev) => prev.filter((item) => item.id !== acomp.id));
+      setAcompParaVisualizar(null);
+    } catch (error) {
+      console.error("Erro ao excluir:", error);
+      toast.error("Erro ao excluir acompanhamento");
+    }
+  };
 
   const filteredAcompanhamentos = acompanhamentos.filter((acomp) => {
     const matchesSearch =
@@ -126,11 +172,9 @@ export default function AcompanhamentoPage() {
           </p>
         </div>
         {canCreate && (
-          <Button asChild>
-            <Link href="/acompanhamento/novo">
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Registro
-            </Link>
+          <Button onClick={() => setIsNovoOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Registro
           </Button>
         )}
       </div>
@@ -225,11 +269,9 @@ export default function AcompanhamentoPage() {
                   : "Tente ajustar os filtros de busca."}
               </EmptyDescription>
               {acompanhamentos.length === 0 && canCreate && (
-                <Button asChild className="mt-4">
-                  <Link href="/acompanhamento/novo">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Novo Registro
-                  </Link>
+                <Button onClick={() => setIsNovoOpen(true)} className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Registro
                 </Button>
               )}
             </Empty>
@@ -263,10 +305,10 @@ export default function AcompanhamentoPage() {
                     {dateAcompanhamentos.map((acomp) => {
                       const Icon = ICONES_ACOMPANHAMENTO[acomp.tipo];
                       return (
-                        <Link
+                        <div
                           key={acomp.id}
-                          href={`/acompanhamento/${acomp.id}`}
-                          className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50"
+                          onClick={() => setAcompParaVisualizar(acomp)}
+                          className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50 cursor-pointer"
                         >
                           <div className="relative">
                             <Avatar className="h-12 w-12">
@@ -305,7 +347,7 @@ export default function AcompanhamentoPage() {
                             </div>
                           </div>
                           <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                        </Link>
+                        </div>
                       );
                     })}
                   </CardContent>
@@ -315,6 +357,210 @@ export default function AcompanhamentoPage() {
           })}
         </div>
       )}
+
+      {/* Drawer: Novo Registro */}
+      <Sheet open={isNovoOpen} onOpenChange={setIsNovoOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle>Novo Acompanhamento</SheetTitle>
+            <SheetDescription>
+              Registre uma visita, culto no lar ou aconselhamento
+            </SheetDescription>
+          </SheetHeader>
+          <AcompanhamentoForm
+            onSuccess={() => {
+              setIsNovoOpen(false);
+              loadAcompanhamentos();
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer: Visualizar Detalhes */}
+      <Sheet open={!!acompParaVisualizar} onOpenChange={(open) => !open && setAcompParaVisualizar(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-6 overflow-y-auto">
+          {acompParaVisualizar && (
+            <div className="space-y-6">
+              <SheetHeader>
+                <div className="flex items-center gap-2">
+                  <SheetTitle>{TIPOS_ACOMPANHAMENTO[acompParaVisualizar.tipo]}</SheetTitle>
+                  <Badge
+                    style={{
+                      backgroundColor: CORES_ACOMPANHAMENTO[acompParaVisualizar.tipo],
+                      color: "white",
+                    }}
+                  >
+                    {TIPOS_ACOMPANHAMENTO[acompParaVisualizar.tipo]}
+                  </Badge>
+                </div>
+                <SheetDescription>
+                  {format(acompParaVisualizar.data.toDate(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="space-y-6">
+                {/* Member Info */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">Membro</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-3">
+                    <Link
+                      href={`/membros/${acompParaVisualizar.membroId}`}
+                      className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                    >
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={acompParaVisualizar.membroFotoUrl || undefined} />
+                        <AvatarFallback className="text-sm">
+                          {acompParaVisualizar.membroNome.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-medium">{acompParaVisualizar.membroNome}</p>
+                        <p className="text-xs text-muted-foreground">Ver perfil completo</p>
+                      </div>
+                    </Link>
+                  </CardContent>
+                </Card>
+
+                {/* Description */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">Descrição</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <p className="whitespace-pre-wrap text-muted-foreground">
+                      {acompParaVisualizar.descricao}
+                    </p>
+                    {acompParaVisualizar.observacoes && (
+                      <div className="rounded-lg bg-muted/50 p-3">
+                        <p className="mb-1 text-xs font-semibold">Observações</p>
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                          {acompParaVisualizar.observacoes}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Hospital Details */}
+                {acompParaVisualizar.tipo === "visita_hospitalar" && acompParaVisualizar.dadosHospital && (
+                  <Card className="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
+                    <CardHeader className="py-3">
+                      <CardTitle className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-400">
+                        <Hospital className="h-4 w-4" />
+                        Dados Hospitalares
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 sm:grid-cols-2 text-xs">
+                      {acompParaVisualizar.dadosHospital.nomeHospital && (
+                        <div>
+                          <p className="text-muted-foreground">Hospital</p>
+                          <p className="font-medium">{acompParaVisualizar.dadosHospital.nomeHospital}</p>
+                        </div>
+                      )}
+                      {acompParaVisualizar.dadosHospital.enderecoHospital && (
+                        <div>
+                          <p className="text-muted-foreground">Endereço</p>
+                          <p className="font-medium">{acompParaVisualizar.dadosHospital.enderecoHospital}</p>
+                        </div>
+                      )}
+                      {acompParaVisualizar.dadosHospital.telefoneHospital && (
+                        <div>
+                          <p className="text-muted-foreground">Telefone</p>
+                          <p className="font-medium">{acompParaVisualizar.dadosHospital.telefoneHospital}</p>
+                        </div>
+                      )}
+                      {acompParaVisualizar.dadosHospital.quartoLeito && (
+                        <div>
+                          <p className="text-muted-foreground">Quarto / Leito</p>
+                          <p className="font-medium">{acompParaVisualizar.dadosHospital.quartoLeito}</p>
+                        </div>
+                      )}
+                      {acompParaVisualizar.dadosHospital.horarioVisita && (
+                        <div>
+                          <p className="text-muted-foreground">Horário de Visita</p>
+                          <p className="font-medium">{acompParaVisualizar.dadosHospital.horarioVisita}</p>
+                        </div>
+                      )}
+                      {acompParaVisualizar.dadosHospital.previsaoAlta && (
+                        <div>
+                          <p className="text-muted-foreground">Previsão de Alta</p>
+                          <p className="font-medium">
+                            {format(acompParaVisualizar.dadosHospital.previsaoAlta.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Info Card */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">Informações Gerais</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Responsável</span>
+                      <span className="font-medium">{acompParaVisualizar.responsavelNome}</span>
+                    </div>
+                    {acompParaVisualizar.proximoContato && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Próximo Contato</span>
+                        <span className="font-medium text-amber-600 dark:text-amber-400">
+                          {format(acompParaVisualizar.proximoContato.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Registrado em</span>
+                      <span>
+                        {format(acompParaVisualizar.dataCriacao.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-4">
+                  {canDelete && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Excluir Acompanhamento</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que deseja excluir este registro de acompanhamento? Esta ação não pode
+                            ser desfeita.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(acompParaVisualizar)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  <Button variant="outline" onClick={() => setAcompParaVisualizar(null)}>
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -51,7 +51,7 @@ export type FuncaoIgreja =
 // - full: acesso total ao sistema (todas as unidades)
 // - admin: acesso à sua unidade + unidades filhas
 // - user: acesso apenas à sua unidade
-export type NivelAcesso = "full" | "admin" | "user";
+export type NivelAcesso = "full" | "admin" | "lider" | "user";
 
 // Tipos de unidade na hierarquia
 export type TipoUnidade = "sede" | "congregacao" | "subcongregacao";
@@ -273,6 +273,7 @@ export const FUNCOES_IGREJA: Record<FuncaoIgreja, string> = {
 export const NIVEIS_ACESSO: Record<NivelAcesso, string> = {
   full: "Acesso Total",
   admin: "Administrador",
+  lider: "Líder",
   user: "Usuário",
 };
 

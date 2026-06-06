@@ -50,6 +50,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { VisitanteForm } from "@/components/visitantes/visitante-form";
+import { Separator } from "@/components/ui/separator";
+import {
   UserPlus,
   Search,
   MoreHorizontal,
@@ -81,6 +90,10 @@ export default function VisitantesPage() {
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [filterStatus, setFilterStatus] = useState<string>("ativos");
   const [visitanteToDeactivate, setVisitanteToDeactivate] = useState<VisitanteComUnidade | null>(null);
+
+  // Estados para Sheets (Visualizar e Editar)
+  const [visitanteParaVisualizar, setVisitanteParaVisualizar] = useState<VisitanteComUnidade | null>(null);
+  const [visitanteParaEditar, setVisitanteParaEditar] = useState<VisitanteComUnidade | null>(null);
 
   const canEdit = nivelAcesso === "admin" || nivelAcesso === "full";
 
@@ -440,19 +453,19 @@ export default function VisitantesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/visitantes/${visitante.id}?unidade=${visitante.unidadeId}`}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Visualizar
-                            </Link>
+                          <DropdownMenuItem
+                            onClick={() => setVisitanteParaVisualizar(visitante)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Visualizar
                           </DropdownMenuItem>
                           {canEdit && (
                             <>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/visitantes/${visitante.id}/editar?unidade=${visitante.unidadeId}`}>
-                                  <Pencil className="mr-2 h-4 w-4" />
-                                  Editar
-                                </Link>
+                              <DropdownMenuItem
+                                onClick={() => setVisitanteParaEditar(visitante)}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar
                               </DropdownMenuItem>
                               {!visitante.convertidoParaMembro && (
                                 <>
@@ -511,6 +524,173 @@ export default function VisitantesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sheet para Visualizar Visitante */}
+      <Sheet open={!!visitanteParaVisualizar} onOpenChange={(open) => !open && setVisitanteParaVisualizar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {visitanteParaVisualizar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <UserPlus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold">{visitanteParaVisualizar.nome}</SheetTitle>
+                    <SheetDescription>
+                      Visita em {formatDate(visitanteParaVisualizar.dataVisita)}
+                    </SheetDescription>
+                  </div>
+                </div>
+              </SheetHeader>
+
+              <Separator />
+
+              {/* Informações Básicas */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Informações de Contato
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center gap-3 rounded-lg border p-3">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Telefone / WhatsApp</p>
+                      <a href={`tel:+55${visitanteParaVisualizar.telefone}`} className="text-sm font-medium hover:underline">
+                        {formatPhone(visitanteParaVisualizar.telefone)}
+                      </a>
+                    </div>
+                  </div>
+                  {visitanteParaVisualizar.dataNascimento && (
+                    <div className="flex items-center gap-3 rounded-lg border p-3">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Nascimento</p>
+                        <p className="text-sm font-medium">{formatDate(visitanteParaVisualizar.dataNascimento)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Detalhes da Visita */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">Detalhes da Visita</h3>
+                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Primeira Visita?</p>
+                    <p className="text-sm font-medium">{visitanteParaVisualizar.primeiraVisita ? "Sim" : "Não"}</p>
+                  </div>
+                  {visitanteParaVisualizar.convidadoPor && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">Convidado por</p>
+                      <p className="text-sm font-medium">{visitanteParaVisualizar.convidadoPor}</p>
+                    </div>
+                  )}
+                  {visitanteParaVisualizar.unidadeId && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">Congregação</p>
+                      <p className="text-sm font-medium">{getUnidadeNome(visitanteParaVisualizar.unidadeId)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Informações Espirituais */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">Informações Adicionais</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Já recebeu Jesus?</p>
+                    <p className="text-sm font-medium">
+                      {visitanteParaVisualizar.jaRecebeuJesus === true ? "Sim" : visitanteParaVisualizar.jaRecebeuJesus === false ? "Não" : "-"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Pertence a alguma igreja?</p>
+                    <p className="text-sm font-medium">
+                      {visitanteParaVisualizar.pertenceIgreja === true 
+                        ? `Sim (${visitanteParaVisualizar.qualIgreja || "Não especificada"})` 
+                        : visitanteParaVisualizar.pertenceIgreja === false ? "Não" : "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acompanhantes */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Acompanhantes
+                </h3>
+                {visitanteParaVisualizar.acompanhantes && visitanteParaVisualizar.acompanhantes.length > 0 ? (
+                  <div className="space-y-2">
+                    {visitanteParaVisualizar.acompanhantes.map((acomp, index) => (
+                      <div key={index} className="p-3 border rounded-lg space-y-1">
+                        <div className="font-semibold text-sm">{acomp.nome}</div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          {acomp.telefone && <span>WhatsApp: {formatPhone(acomp.telefone)}</span>}
+                          {acomp.parentesco && <span>Parentesco: {acomp.parentesco}</span>}
+                          {acomp.dataNascimento && <span>Nascimento: {formatDate(acomp.dataNascimento)}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-4 border rounded-lg border-dashed">
+                    Nenhum acompanhante cadastrado.
+                  </p>
+                )}
+              </div>
+
+              {/* Pedido de Oração */}
+              {visitanteParaVisualizar.pedidoOracao && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Pedido de Oração</h3>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground bg-muted/40 p-3 rounded-lg border">
+                    {visitanteParaVisualizar.pedidoOracao}
+                  </p>
+                </div>
+              )}
+
+              {/* Observações */}
+              {visitanteParaVisualizar.observacoes && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Observações</h3>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground bg-muted/40 p-3 rounded-lg border">
+                    {visitanteParaVisualizar.observacoes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Editar Visitante */}
+      <Sheet open={!!visitanteParaEditar} onOpenChange={(open) => !open && setVisitanteParaEditar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {visitanteParaEditar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <SheetTitle className="text-2xl font-bold">Editar Visitante</SheetTitle>
+                <SheetDescription>
+                  Atualize as informações cadastrais de {visitanteParaEditar.nome}
+                </SheetDescription>
+              </SheetHeader>
+              <VisitanteForm
+                visitante={visitanteParaEditar}
+                unidadeIdParam={visitanteParaEditar.unidadeId}
+                onSuccess={() => {
+                  setVisitanteParaEditar(null);
+                  toast.success("Visitante atualizado com sucesso!");
+                }}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

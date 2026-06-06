@@ -8,12 +8,15 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  where,
+  getDocs,
 } from "firebase/firestore";
-import { getMembrosCollection, getMembroDoc } from "@/lib/firestore";
+import { getMembrosCollection, getMembroDoc, getAcompanhamentosCollection } from "@/lib/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -51,6 +54,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/auth-context";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { MembroForm } from "@/components/membros/membro-form";
+import {
   UserPlus,
   Search,
   MoreHorizontal,
@@ -59,18 +70,34 @@ import {
   UserX,
   Users,
   Phone,
+  Mail,
   MapPin,
   Building2,
   Copy,
+  Calendar,
+  Briefcase,
+  Cake,
+  Home,
+  Hospital,
+  BookOpen,
+  MessageCircle,
+  HeartHandshake,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Membro,
   TipoMembro,
   CargoMembro,
+  Acompanhamento,
+  TipoAcompanhamento,
   TIPOS_MEMBRO,
   CARGOS_MEMBRO,
   TIPOS_UNIDADE,
+  TIPOS_ACOMPANHAMENTO,
+  CORES_ACOMPANHAMENTO,
 } from "@/lib/types";
 import { QRCodeModal } from "@/components/qr-code-modal";
 import { useUnidadeSelecionada } from "@/contexts/unidade-selecionada-context";
@@ -79,6 +106,13 @@ import { useUnidadeSelecionada } from "@/contexts/unidade-selecionada-context";
 interface MembroComUnidade extends Membro {
   unidadeId: string;
 }
+
+const ICONES_ACOMPANHAMENTO: Record<TipoAcompanhamento, React.ComponentType<{ className?: string }>> = {
+  visita_residencial: Home,
+  visita_hospitalar: Hospital,
+  culto_no_lar: BookOpen,
+  aconselhamento: MessageCircle,
+};
 
 export default function MembrosPage() {
   const { usuario, igrejaId, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
@@ -90,6 +124,66 @@ export default function MembrosPage() {
   const [filterCargo, setFilterCargo] = useState<CargoMembro | "todos">("todos");
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [memberToDeactivate, setMemberToDeactivate] = useState<MembroComUnidade | null>(null);
+
+  // Estados para Drawer/Sheet
+  const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade | null>(null);
+  const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade | null>(null);
+  const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
+  const [loadingAcomp, setLoadingAcomp] = useState(false);
+
+  // Carrega acompanhamentos quando visualizando um membro
+  useEffect(() => {
+    if (!igrejaId || !membroParaVisualizar) {
+      setAcompanhamentos([]);
+      return;
+    }
+
+    const loadAcompanhamentos = async () => {
+      setLoadingAcomp(true);
+      try {
+        const acompRef = getAcompanhamentosCollection(igrejaId, membroParaVisualizar.unidadeId);
+        const acompQuery = query(
+          acompRef,
+          where("membroId", "==", membroParaVisualizar.id)
+        );
+        const snapshot = await getDocs(acompQuery);
+        const data: Acompanhamento[] = [];
+        snapshot.forEach((docSnap) => {
+          data.push({ id: docSnap.id, ...docSnap.data() } as unknown as Acompanhamento);
+        });
+        
+        // Ordena por data decrescente no cliente para evitar a necessidade de criar um índice composto no Firestore
+        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+        
+        setAcompanhamentos(data);
+      } catch (error) {
+        console.error("Erro ao carregar acompanhamentos:", error);
+      } finally {
+        setLoadingAcomp(false);
+      }
+    };
+
+    loadAcompanhamentos();
+  }, [igrejaId, membroParaVisualizar]);
+
+  const formatPhone = (phone: string) => {
+    if (phone.length === 11) {
+      return `(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`;
+    }
+    return phone;
+  };
+
+  const formatCep = (cep: string) => {
+    if (cep.length === 8) {
+      return `${cep.slice(0, 5)}-${cep.slice(5)}`;
+    }
+    return cep;
+  };
+
+  const formatDate = (timestamp: { toDate: () => Date } | undefined) => {
+    if (!timestamp) return "-";
+    return timestamp.toDate().toLocaleDateString("pt-BR");
+  };
 
   const canEdit = nivelAcesso === "admin" || nivelAcesso === "full";
 
@@ -180,13 +274,6 @@ export default function MembrosPage() {
       console.error("Erro ao desativar membro:", error);
       toast.error("Erro ao desativar membro");
     }
-  };
-
-  const formatPhone = (phone: string) => {
-    if (phone.length === 11) {
-      return `(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`;
-    }
-    return phone;
   };
 
   const getUnidadeNome = (unidadeId: string) => {
@@ -432,19 +519,19 @@ export default function MembrosPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/membros/${membro.id}?unidade=${membro.unidadeId}`}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Visualizar
-                            </Link>
+                          <DropdownMenuItem
+                            onClick={() => setMembroParaVisualizar(membro)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Visualizar
                           </DropdownMenuItem>
                           {canEdit && (
                             <>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/membros/${membro.id}/editar?unidade=${membro.unidadeId}`}>
-                                  <Pencil className="mr-2 h-4 w-4" />
-                                  Editar
-                                </Link>
+                              <DropdownMenuItem
+                                onClick={() => setMembroParaEditar(membro)}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
@@ -502,6 +589,233 @@ export default function MembrosPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Sheet para Visualizar Detalhes do Membro */}
+      <Sheet open={!!membroParaVisualizar} onOpenChange={(open) => !open && setMembroParaVisualizar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {membroParaVisualizar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={membroParaVisualizar.fotoUrl || undefined} alt={membroParaVisualizar.nome} />
+                    <AvatarFallback className="text-xl">
+                      {membroParaVisualizar.nome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold">{membroParaVisualizar.nome}</SheetTitle>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        style={{
+                          backgroundColor: `var(--type-${membroParaVisualizar.tipo})`,
+                          color: "white",
+                        }}
+                      >
+                        {TIPOS_MEMBRO[membroParaVisualizar.tipo]}
+                      </Badge>
+                      {membroParaVisualizar.cargo && (
+                        <Badge variant="outline">
+                          {membroParaVisualizar.cargo === "outro"
+                            ? membroParaVisualizar.cargoDescricao
+                            : CARGOS_MEMBRO[membroParaVisualizar.cargo]}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </SheetHeader>
+
+              <Separator />
+
+              {/* Informações de Contato */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Informações de Contato
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center gap-3 rounded-lg border p-3">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Telefone</p>
+                      <a href={`tel:+55${membroParaVisualizar.telefone}`} className="text-sm font-medium hover:underline">
+                        {formatPhone(membroParaVisualizar.telefone)}
+                      </a>
+                    </div>
+                  </div>
+                  {membroParaVisualizar.email && (
+                    <div className="flex items-center gap-3 rounded-lg border p-3">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">E-mail</p>
+                        <a href={`mailto:${membroParaVisualizar.email}`} className="text-sm font-medium hover:underline truncate block">
+                          {membroParaVisualizar.email}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Endereço */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Endereço
+                </h3>
+                <div className="rounded-lg border p-4 space-y-2">
+                  <p className="text-sm font-medium">
+                    {membroParaVisualizar.endereco?.logradouro}, {membroParaVisualizar.endereco?.numero}
+                    {membroParaVisualizar.endereco?.complemento && ` - ${membroParaVisualizar.endereco?.complemento}`}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {membroParaVisualizar.endereco?.bairro} - {membroParaVisualizar.endereco?.cidade}/{membroParaVisualizar.endereco?.estado}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    CEP: {formatCep(membroParaVisualizar.endereco?.cep || "")}
+                  </p>
+                  {membroParaVisualizar.coordenadas && (
+                    <div className="pt-2 flex gap-2">
+                      <Button variant="outline" size="sm" asChild className="w-full">
+                        <a
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${membroParaVisualizar.coordenadas.lat},${membroParaVisualizar.coordenadas.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                          Traçar Rota
+                        </a>
+                      </Button>
+                      <Button variant="outline" size="sm" asChild className="w-full">
+                        <a
+                          href={`https://wa.me/55${membroParaVisualizar.telefone}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Phone className="mr-1.5 h-3.5 w-3.5" />
+                          WhatsApp
+                        </a>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Datas Importantes */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Datas Importantes
+                </h3>
+                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+                  {membroParaVisualizar.dataNascimento && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">Aniversário</p>
+                      <p className="text-sm font-medium">
+                        {format(membroParaVisualizar.dataNascimento.toDate(), "dd 'de' MMMM", { locale: ptBR })}
+                      </p>
+                    </div>
+                  )}
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Data de Cadastro</p>
+                    <p className="text-sm font-medium">{formatDate(membroParaVisualizar.dataCadastro)}</p>
+                  </div>
+                  {membroParaVisualizar.dataBatismo && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">Data de Batismo</p>
+                      <p className="text-sm font-medium">{formatDate(membroParaVisualizar.dataBatismo)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Histórico de Acompanhamento */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <HeartHandshake className="h-4 w-4" />
+                  Histórico de Acompanhamento
+                </h3>
+                {loadingAcomp ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
+                ) : acompanhamentos.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4 border rounded-lg border-dashed">
+                    Nenhum acompanhamento registrado para este membro.
+                  </p>
+                ) : (
+                  <div className="relative border rounded-lg divide-y bg-muted/20">
+                    {acompanhamentos.map((acomp) => {
+                      const AcompIcon = ICONES_ACOMPANHAMENTO[acomp.tipo];
+                      return (
+                        <div key={acomp.id} className="p-3 space-y-1.5 hover:bg-muted/40 transition-colors">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-5 px-1.5"
+                              style={{
+                                borderColor: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                color: CORES_ACOMPANHAMENTO[acomp.tipo],
+                              }}
+                            >
+                              {TIPOS_ACOMPANHAMENTO[acomp.tipo]}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {format(acomp.data.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {acomp.descricao}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Por: {acomp.responsavelNome}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Observações */}
+              {membroParaVisualizar.observacoes && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Observações</h3>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground bg-muted/40 p-3 rounded-lg border">
+                    {membroParaVisualizar.observacoes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Editar Membro */}
+      <Sheet open={!!membroParaEditar} onOpenChange={(open) => !open && setMembroParaEditar(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          {membroParaEditar && (
+            <div className="space-y-6 pt-4">
+              <SheetHeader className="p-0">
+                <SheetTitle className="text-2xl font-bold">Editar Membro</SheetTitle>
+                <SheetDescription>
+                  Atualize as informações cadastrais de {membroParaEditar.nome}
+                </SheetDescription>
+              </SheetHeader>
+              <MembroForm
+                membro={membroParaEditar}
+                unidadeIdParam={membroParaEditar.unidadeId}
+                onSuccess={() => {
+                  setMembroParaEditar(null);
+                  toast.success("Membro atualizado com sucesso!");
+                }}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
