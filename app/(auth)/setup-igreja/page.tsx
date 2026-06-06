@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { doc, setDoc, collection, addDoc, Timestamp, getDocs, query, where } from "firebase/firestore";
+import { doc, setDoc, collection, addDoc, Timestamp, getDocs, query, where, updateDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -568,17 +568,38 @@ export default function SetupIgrejaPage() {
         const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
         if (adminPhoneDigits.length >= 10) {
           const adminUserId = `+55${adminPhoneDigits}`;
-          const adminUserRef = doc(db, "usuarios", adminUserId);
-          await setDoc(adminUserRef, {
-            nome: adminNome.trim(),
-            telefone: adminTelefone.trim(),
-            nivelAcesso: "admin",
-            igrejaId: finalIgrejaId,
-            unidadeId: finalUnidadeId,
-            ativo: true,
-            dataCriacao: Timestamp.now(),
-            criadoPor: currentUser.uid,
-          });
+          
+          // Verifica se já existe um usuário com esse telefone no banco
+          const usuariosRef = collection(db, "usuarios");
+          const q = query(usuariosRef, where("telefone", "==", adminTelefone.trim()));
+          const snapshot = await getDocs(q);
+
+          if (!snapshot.empty) {
+            // Atualiza usuário existente
+            const existingUserDoc = snapshot.docs[0];
+            const userRef = doc(db, "usuarios", existingUserDoc.id);
+            await updateDoc(userRef, {
+              nome: adminNome.trim(),
+              nivelAcesso: "admin",
+              igrejaId: finalIgrejaId,
+              unidadeId: finalUnidadeId,
+              ativo: true,
+              dataAtualizacao: Timestamp.now()
+            });
+          } else {
+            // Cria novo pré-cadastro
+            const adminUserRef = doc(db, "usuarios", adminUserId);
+            await setDoc(adminUserRef, {
+              nome: adminNome.trim(),
+              telefone: adminTelefone.trim(),
+              nivelAcesso: "admin",
+              igrejaId: finalIgrejaId,
+              unidadeId: finalUnidadeId,
+              ativo: true,
+              dataCriacao: Timestamp.now(),
+              criadoPor: currentUser.uid,
+            });
+          }
         }
       }
 
