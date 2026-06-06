@@ -46,6 +46,14 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
 
   const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
 
+  const handleHospedeiraChange = (id: string) => {
+    setHospedeiraId(id);
+    const church = todasIgrejas.find(ig => ig.id === id);
+    if (church && church.dirigente) {
+      setDirigente(church.dirigente);
+    }
+  };
+
   // Carrega todas as igrejas/unidades
   useEffect(() => {
     if (!igrejaId) return;
@@ -283,7 +291,7 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
             <Label htmlFor="hospedeira">Igreja Hospedeira (Sede) *</Label>
             <Select
               value={hospedeiraId}
-              onValueChange={setHospedeiraId}
+              onValueChange={handleHospedeiraChange}
               disabled={isSedeRegional1}
             >
               <SelectTrigger>
