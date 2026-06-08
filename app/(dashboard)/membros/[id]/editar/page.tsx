@@ -64,6 +64,19 @@ export default function EditarMembroPage() {
             cep: data.cep || "",
           },
           criadoPor: data.criado_por || "",
+          sexo: data.sexo || undefined,
+          estadoCivil: data.estado_civil || undefined,
+          nomeConjuge: data.nome_conjuge || "",
+          conjugeId: data.conjuge_id || undefined,
+          temFuncaoIgreja: data.tem_funcao_igreja || false,
+          funcoes: data.funcoes || [],
+          funcaoDescricao: data.funcao_descricao || "",
+          departamentos: data.departamentos || [],
+          departamentoDescricao: data.departamento_descricao || "",
+          ehLider: data.eh_lider || false,
+          liderDe: data.lider_de || "",
+          grupoId: data.grupo_id || undefined,
+          dataConversao: data.data_conversao ? { toDate: () => new Date(data.data_conversao + "T12:00:00") } : undefined,
         };
 
         setMembro(m);

@@ -51,7 +51,7 @@ function CadastroMembroContent() {
   const [email, setEmail] = useState("");
   const [sexo, setSexo] = useState<Sexo | "">("");
   const [dataNascimento, setDataNascimento] = useState("");
-  const [tipo, setTipo] = useState<TipoMembro>("congregado");
+  const [tipo, setTipo] = useState<TipoMembro>("membro");
   const [cargo, setCargo] = useState<CargoMembro | "">("");
   const [cargoDescricao, setCargoDescricao] = useState("");
   const [unidadeId, setUnidadeId] = useState(unidadeIdParam || "");

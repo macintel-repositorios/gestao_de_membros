@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,7 +29,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
-import { Search, MapPin, CalendarIcon, UserPlus } from "lucide-react";
+import { Search, MapPin, CalendarIcon, UserPlus, ChevronDown, ChevronUp } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar } from "@/components/ui/calendar";
@@ -110,7 +111,7 @@ interface MembroFormProps {
   onSuccess?: () => void;
 }
 
-export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProps) {
+export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProps, ref) {
   const router = useRouter();
   const { user, igrejaId, unidadeId, unidadesAcessiveis, todasUnidades, temAcessoTotal, loading: authLoading } = useAuth();
   // Unidades disponíveis para seleção
@@ -123,6 +124,23 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
     (unidadesDisponiveis.length === 1 ? unidadesDisponiveis[0]?.id : "") || "";
   
   const [selectedUnidadeId, setSelectedUnidadeId] = useState<string>(defaultUnidadeId);
+
+  useImperativeHandle(ref, () => ({
+    isDirty: () => form.formState.isDirty,
+    submitForm: async () => {
+      const isValid = await form.trigger();
+      if (!isValid) return false;
+      
+      try {
+        const values = form.getValues();
+        await onSubmit(values);
+        return true;
+      } catch (error) {
+        console.error("Erro no autosave:", error);
+        return false;
+      }
+    }
+  }));
   
   // Atualiza selectedUnidadeId quando unidades disponíveis carregarem
   useEffect(() => {
@@ -131,6 +149,7 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
     }
   }, [unidadesDisponiveis, selectedUnidadeId]);
   const [loading, setLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(membro ? null : "dados");
   const [loadingCep, setLoadingCep] = useState(false);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [coordenadas, setCoordenadas] = useState<{ lat: number; lng: number } | null>(
@@ -156,7 +175,7 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
         const d = membro.dataNascimento.toDate();
         return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
       })() : undefined,
-      tipo: membro?.tipo || "visitante",
+      tipo: membro?.tipo || "membro",
       cargo: membro?.cargo,
       cargoDescricao: membro?.cargoDescricao || "",
       estadoCivil: membro?.estadoCivil || "solteiro",
@@ -618,207 +637,128 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         {/* Photo */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Foto</CardTitle>
-          </CardHeader>
-          <CardContent className="flex justify-center">
-            <FotoUpload
-              fotoUrl={fotoBase64 || undefined}
-              nome={form.watch("nome")}
-              onFotoChange={setFotoBase64}
-            />
-          </CardContent>
-        </Card>
+        <Collapsible open={activeSection === "foto"} onOpenChange={(open) => setActiveSection(open ? "foto" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Foto</CardTitle>
+                    {activeSection !== "foto" && fotoBase64 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Foto cadastrada
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "foto" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="flex justify-center pt-2">
+                <FotoUpload
+                  fotoUrl={fotoBase64 || undefined}
+                  nome={form.watch("nome")}
+                  onFotoChange={setFotoBase64}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
         {/* Personal Data */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Dados Pessoais</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="nome"
-              render={({ field }) => (
-                <FormItem className="sm:col-span-2">
-                  <FormLabel>Nome Completo *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Nome do membro" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="telefone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Telefone *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="(11) 99999-9999"
-                      value={formatPhone(field.value)}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
-                        field.onChange(digits);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="email@exemplo.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="sexo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Sexo *</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || undefined}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {(Object.keys(SEXOS) as Sexo[]).map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {SEXOS[s]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="dataNascimento"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Data de Nascimento</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
-                          ) : (
-                            <span>Selecione a data</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        defaultMonth={field.value || new Date(1990, 0)}
-                        captionLayout="dropdown"
-                        fromYear={1920}
-                        toYear={new Date().getFullYear()}
-                        locale={ptBR}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Estado Civil e Cônjuge */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Estado Civil</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="estadoCivil"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Estado Civil *</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || undefined}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {(Object.keys(ESTADOS_CIVIS) as EstadoCivil[]).map((ec) => (
-                        <SelectItem key={ec} value={ec}>
-                          {ESTADOS_CIVIS[ec]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {temConjuge && (
-              <>
-                <Separator />
-                
+        <Collapsible open={activeSection === "dados"} onOpenChange={(open) => setActiveSection(open ? "dados" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Dados Pessoais</CardTitle>
+                    {activeSection !== "dados" && form.watch("nome") && (
+                      <p className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span>Nome: <span className="font-semibold text-primary">{form.watch("nome")}</span></span>
+                        {form.watch("estadoCivil") && (
+                          <span>• Estado Civil: <span className="font-semibold text-primary">{ESTADOS_CIVIS[form.watch("estadoCivil") || "solteiro"]}</span></span>
+                        )}
+                        {membro && (
+                          <span>• Situação: <span className={cn("font-semibold", (membro.ativo || membro.situacao === "ativo") ? "text-emerald-600" : "text-destructive")}>{(membro.ativo || membro.situacao === "ativo") ? "Ativo" : "Inativo"}</span></span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "dados" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="grid gap-4 sm:grid-cols-2 pt-2">
                 <FormField
                   control={form.control}
-                  name="conjugeEhMembro"
+                  name="nome"
+                  render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Nome Completo *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Nome do membro" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="telefone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>O cônjuge também é membro da igreja? *</FormLabel>
-                      <Select
-                        onValueChange={(v) => {
-                          const isMembro = v === "sim";
-                          field.onChange(isMembro);
-                          if (!isMembro) {
-                            form.setValue("conjugeIdSelecionado", "");
-                            form.setValue("adicionarNovoConjuge", false);
-                          }
-                        }}
-                        value={field.value ? "sim" : "nao"}
-                      >
+                      <FormLabel>Telefone *</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="(11) 99999-9999"
+                          value={formatPhone(field.value)}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                            field.onChange(digits);
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="email@exemplo.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="sexo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sexo *</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecione" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="nao">Não</SelectItem>
-                          <SelectItem value="sim">Sim</SelectItem>
+                          {(Object.keys(SEXOS) as Sexo[]).map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {SEXOS[s]}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -826,294 +766,427 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
                   )}
                 />
 
-                {watchConjugeEhMembro ? (
-                  <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
-                    {loadingMembros ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Spinner className="h-6 w-6" />
-                        <span className="ml-2 text-sm text-muted-foreground">Carregando membros...</span>
-                      </div>
-                    ) : (
-                      <>
-                        {!watchAdicionarNovoConjuge ? (
-                          <>
-                            <FormField
-                              control={form.control}
-                              name="conjugeIdSelecionado"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Selecione o cônjuge *</FormLabel>
-                                  <Select onValueChange={field.onChange} value={field.value}>
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Selecione na lista" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {membrosLista
-                                        .filter((m) => {
-                                          if (watchSexo === "masculino") return m.sexo === "feminino";
-                                          if (watchSexo === "feminino") return m.sexo === "masculino";
-                                          return true;
-                                        })
-                                        .map((m) => (
-                                          <SelectItem key={m.id} value={m.id}>
-                                            {m.nome}
-                                          </SelectItem>
-                                        ))
-                                      }
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
+                <FormField
+                  control={form.control}
+                  name="dataNascimento"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Data de Nascimento</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
                             <Button
-                              type="button"
                               variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                form.setValue("adicionarNovoConjuge", true);
-                                form.setValue("conjugeIdSelecionado", "");
-                              }}
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
                             >
-                              <UserPlus className="h-4 w-4 mr-2" />
-                              Não encontrei, adicionar novo
+                              {field.value ? (
+                                format(field.value, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                              ) : (
+                                <span>Selecione a data</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                             </Button>
-                          </>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date("1900-01-01")
+                            }
+                            defaultMonth={field.value || new Date(1990, 0)}
+                            captionLayout="dropdown"
+                            fromYear={1920}
+                            toYear={new Date().getFullYear()}
+                            locale={ptBR}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+
+        {/* Estado Civil e Cônjuge */}
+        <Collapsible open={activeSection === "civil"} onOpenChange={(open) => setActiveSection(open ? "civil" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Estado Civil</CardTitle>
+                    {activeSection !== "civil" && form.watch("estadoCivil") && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Estado Civil: <span className="font-semibold text-primary">{ESTADOS_CIVIS[form.watch("estadoCivil") || "solteiro"]}</span>
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "civil" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-2">
+                <FormField
+                  control={form.control}
+                  name="estadoCivil"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estado Civil *</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(Object.keys(ESTADOS_CIVIS) as EstadoCivil[]).map((ec) => (
+                            <SelectItem key={ec} value={ec}>
+                              {ESTADOS_CIVIS[ec]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {temConjuge && (
+                  <>
+                    <Separator />
+                    
+                    <FormField
+                      control={form.control}
+                      name="conjugeEhMembro"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>O cônjuge também é membro da igreja? *</FormLabel>
+                          <Select
+                            onValueChange={(v) => {
+                              const isMembro = v === "sim";
+                              field.onChange(isMembro);
+                              if (!isMembro) {
+                                form.setValue("conjugeIdSelecionado", "");
+                                form.setValue("adicionarNovoConjuge", false);
+                              }
+                            }}
+                            value={field.value ? "sim" : "nao"}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="nao">Não</SelectItem>
+                              <SelectItem value="sim">Sim</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {watchConjugeEhMembro ? (
+                      <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
+                        {loadingMembros ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Spinner className="h-6 w-6" />
+                            <span className="ml-2 text-sm text-muted-foreground">Carregando membros...</span>
+                          </div>
                         ) : (
                           <>
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                                <UserPlus className="h-4 w-4" />
-                                Cadastrar novo cônjuge
-                              </p>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  form.setValue("adicionarNovoConjuge", false);
-                                  form.setValue("nomeConjuge", "");
-                                  form.setValue("telefoneConjuge", "");
-                                  form.setValue("emailConjuge", "");
-                                  form.setValue("sexoConjuge", undefined);
-                                  form.setValue("tipoConjuge", "membro");
-                                  form.setValue("cargoConjuge", undefined);
-                                  form.setValue("dataNascimentoConjuge", undefined);
-                                }}
-                              >
-                                <Search className="h-4 w-4 mr-2" />
-                                Voltar para lista
-                              </Button>
-                            </div>
-                            
-                            <FormField
-                              control={form.control}
-                              name="nomeConjuge"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Nome do Cônjuge *</FormLabel>
-                                  <FormControl>
-                                    <Input placeholder="Nome completo do cônjuge" {...field} />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <FormField
-                                control={form.control}
-                                name="tipoConjuge"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Tipo do Cônjuge *</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value}>
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Selecione" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        {(Object.keys(TIPOS_MEMBRO) as TipoMembro[]).map((t) => (
-                                          <SelectItem key={t} value={t}>
-                                            {TIPOS_MEMBRO[t]}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              {showCargoConjuge && (
+                            {!watchAdicionarNovoConjuge ? (
+                              <>
                                 <FormField
                                   control={form.control}
-                                  name="cargoConjuge"
+                                  name="conjugeIdSelecionado"
                                   render={({ field }) => (
                                     <FormItem>
-                                      <FormLabel>Cargo do Cônjuge *</FormLabel>
-                                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                      <FormLabel>Selecione o cônjuge *</FormLabel>
+                                      <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl>
                                           <SelectTrigger>
-                                            <SelectValue placeholder="Selecione" />
+                                            <SelectValue placeholder="Selecione na lista" />
                                           </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                          {(Object.keys(CARGOS_MEMBRO) as CargoMembro[]).map((c) => (
-                                            <SelectItem key={c} value={c}>
-                                              {CARGOS_MEMBRO[c]}
-                                            </SelectItem>
-                                          ))}
+                                          {membrosLista
+                                            .filter((m) => {
+                                              if (watchSexo === "masculino") return m.sexo === "feminino";
+                                              if (watchSexo === "feminino") return m.sexo === "masculino";
+                                              return true;
+                                            })
+                                            .map((m) => (
+                                              <SelectItem key={m.id} value={m.id}>
+                                                {m.nome}
+                                              </SelectItem>
+                                            ))
+                                          }
                                         </SelectContent>
                                       </Select>
                                       <FormMessage />
                                     </FormItem>
                                   )}
                                 />
-                              )}
-                            </div>
-                            
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <FormField
-                                control={form.control}
-                                name="telefoneConjuge"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Telefone do Cônjuge *</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder="(11) 99999-9999"
-                                        value={formatPhone(field.value || "")}
-                                        onChange={(e) => {
-                                          const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
-                                          field.onChange(digits);
-                                        }}
-                                      />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              <FormField
-                                control={form.control}
-                                name="sexoConjuge"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Sexo do Cônjuge *</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    form.setValue("adicionarNovoConjuge", true);
+                                    form.setValue("conjugeIdSelecionado", "");
+                                  }}
+                                >
+                                  <UserPlus className="h-4 w-4 mr-2" />
+                                  Não encontrei, adicionar novo
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                    <UserPlus className="h-4 w-4" />
+                                    Cadastrar novo cônjuge
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      form.setValue("adicionarNovoConjuge", false);
+                                      form.setValue("nomeConjuge", "");
+                                      form.setValue("telefoneConjuge", "");
+                                      form.setValue("emailConjuge", "");
+                                      form.setValue("sexoConjuge", undefined);
+                                      form.setValue("tipoConjuge", "membro");
+                                      form.setValue("cargoConjuge", undefined);
+                                      form.setValue("dataNascimentoConjuge", undefined);
+                                    }}
+                                  >
+                                    <Search className="h-4 w-4 mr-2" />
+                                    Voltar para lista
+                                  </Button>
+                                </div>
+                                
+                                <FormField
+                                  control={form.control}
+                                  name="nomeConjuge"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Nome do Cônjuge *</FormLabel>
                                       <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Selecione" />
-                                        </SelectTrigger>
+                                        <Input placeholder="Nome completo do cônjuge" {...field} />
                                       </FormControl>
-                                      <SelectContent>
-                                        {(Object.keys(SEXOS) as Sexo[]).map((s) => (
-                                          <SelectItem key={s} value={s}>
-                                            {SEXOS[s]}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
 
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <FormField
-                                control={form.control}
-                                name="emailConjuge"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Email do Cônjuge</FormLabel>
-                                    <FormControl>
-                                      <Input type="email" placeholder="email@exemplo.com" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <FormField
+                                    control={form.control}
+                                    name="tipoConjuge"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Tipo do Cônjuge *</FormLabel>
+                                        <Select onValueChange={field.onChange} value={field.value}>
+                                          <FormControl>
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Selecione" />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            {(Object.keys(TIPOS_MEMBRO) as TipoMembro[]).map((t) => (
+                                              <SelectItem key={t} value={t}>
+                                                {TIPOS_MEMBRO[t]}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
 
-                              <FormField
-                                control={form.control}
-                                name="dataNascimentoConjuge"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Data de Nascimento</FormLabel>
-                                    <Popover>
-                                      <PopoverTrigger asChild>
+                                  {showCargoConjuge && (
+                                    <FormField
+                                      control={form.control}
+                                      name="cargoConjuge"
+                                      render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>Cargo do Cônjuge *</FormLabel>
+                                          <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                            <FormControl>
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Selecione" />
+                                              </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                              {(Object.keys(CARGOS_MEMBRO) as CargoMembro[]).map((c) => (
+                                                <SelectItem key={c} value={c}>
+                                                  {CARGOS_MEMBRO[c]}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <FormMessage />
+                                        </FormItem>
+                                      )}
+                                    />
+                                  )}
+                                </div>
+                                
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <FormField
+                                    control={form.control}
+                                    name="telefoneConjuge"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Telefone do Cônjuge *</FormLabel>
                                         <FormControl>
-                                          <Button
-                                            variant="outline"
-                                            className={cn(
-                                              "w-full pl-3 text-left font-normal",
-                                              !field.value && "text-muted-foreground"
-                                            )}
-                                          >
-                                            {field.value ? (
-                                              format(field.value, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
-                                            ) : (
-                                              <span>Selecione</span>
-                                            )}
-                                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                          </Button>
+                                          <Input
+                                            placeholder="(11) 99999-9999"
+                                            value={formatPhone(field.value || "")}
+                                            onChange={(e) => {
+                                              const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                                              field.onChange(digits);
+                                            }}
+                                          />
                                         </FormControl>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0" align="start">
-                                        <Calendar
-                                          mode="single"
-                                          selected={field.value}
-                                          onSelect={field.onChange}
-                                          disabled={(date) =>
-                                            date > new Date() || date < new Date("1900-01-01")
-                                          }
-                                          defaultMonth={field.value || new Date(1990, 0)}
-                                          captionLayout="dropdown"
-                                          fromYear={1920}
-                                          toYear={new Date().getFullYear()}
-                                          locale={ptBR}
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                            
-                            <p className="text-xs text-muted-foreground">
-                              O endereço será o mesmo informado abaixo para ambos.
-                            </p>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+
+                                  <FormField
+                                    control={form.control}
+                                    name="sexoConjuge"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Sexo do Cônjuge *</FormLabel>
+                                        <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                          <FormControl>
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Selecione" />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            {(Object.keys(SEXOS) as Sexo[]).map((s) => (
+                                              <SelectItem key={s} value={s}>
+                                                {SEXOS[s]}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <FormField
+                                    control={form.control}
+                                    name="emailConjuge"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Email do Cônjuge</FormLabel>
+                                        <FormControl>
+                                          <Input type="email" placeholder="email@exemplo.com" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+
+                                  <FormField
+                                    control={form.control}
+                                    name="dataNascimentoConjuge"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Data de Nascimento</FormLabel>
+                                        <Popover>
+                                          <PopoverTrigger asChild>
+                                            <FormControl>
+                                              <Button
+                                                variant="outline"
+                                                className={cn(
+                                                  "w-full pl-3 text-left font-normal",
+                                                  !field.value && "text-muted-foreground"
+                                                )}
+                                              >
+                                                {field.value ? (
+                                                  format(field.value, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                                                ) : (
+                                                  <span>Selecione</span>
+                                                )}
+                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                              </Button>
+                                            </FormControl>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-auto p-0" align="start">
+                                            <Calendar
+                                              mode="single"
+                                              selected={field.value}
+                                              onSelect={field.onChange}
+                                              disabled={(date) =>
+                                                date > new Date() || date < new Date("1900-01-01")
+                                              }
+                                              defaultMonth={field.value || new Date(1990, 0)}
+                                              captionLayout="dropdown"
+                                              fromYear={1920}
+                                              toYear={new Date().getFullYear()}
+                                              locale={ptBR}
+                                            />
+                                          </PopoverContent>
+                                        </Popover>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                                
+                                <p className="text-xs text-muted-foreground">
+                                  O endereço será o mesmo informado abaixo para ambos.
+                                </p>
+                              </>
+                            )}
                           </>
                         )}
-                      </>
+                      </div>
+                    ) : (
+                      <FormField
+                        control={form.control}
+                        name="nomeConjuge"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nome do Cônjuge *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Nome completo do cônjuge" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  </div>
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name="nomeConjuge"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nome do Cônjuge *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Nome completo do cônjuge" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  </>
                 )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
         {/* Unidade */}
         {!membro && (
@@ -1193,56 +1266,48 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
         )}
 
         {/* Classification */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Classificação</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="tipo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tipo de Membro *</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {(Object.keys(TIPOS_MEMBRO) as TipoMembro[]).map((tipo) => (
-                        <SelectItem key={tipo} value={tipo}>
-                          {TIPOS_MEMBRO[tipo]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {showCargo && (
-              <>
+        <Collapsible open={activeSection === "classificacao"} onOpenChange={(open) => setActiveSection(open ? "classificacao" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Classificação</CardTitle>
+                    {activeSection !== "classificacao" && form.watch("tipo") && (
+                      <p className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span>Tipo: <span className="font-semibold text-primary">{TIPOS_MEMBRO[form.watch("tipo")]}</span></span>
+                        {showCargo && form.watch("cargo") && (
+                          <span>• Cargo: <span className="font-semibold text-primary">{CARGOS_MEMBRO[form.watch("cargo") || "auxiliar_escala"]}</span></span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "classificacao" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="grid gap-4 sm:grid-cols-2 pt-2">
                 <FormField
                   control={form.control}
-                  name="cargo"
+                  name="tipo"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Cargo</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                      <FormLabel>Tipo de Membro *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Selecione o cargo" />
+                            <SelectValue placeholder="Selecione o tipo" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {(Object.keys(CARGOS_MEMBRO) as CargoMembro[]).map((cargo) => (
-                            <SelectItem key={cargo} value={cargo}>
-                              {CARGOS_MEMBRO[cargo]}
-                            </SelectItem>
-                          ))}
+                          {(Object.keys(TIPOS_MEMBRO) as TipoMembro[])
+                            .filter((tipo) => tipo !== "visitante")
+                            .map((tipo) => (
+                              <SelectItem key={tipo} value={tipo}>
+                                {TIPOS_MEMBRO[tipo]}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1250,362 +1315,439 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
                   )}
                 />
 
-                {watchCargo === "outro" && (
+                {showCargo && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="cargo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cargo</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || undefined}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione o cargo" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {(Object.keys(CARGOS_MEMBRO) as CargoMembro[]).map((cargo) => (
+                                <SelectItem key={cargo} value={cargo}>
+                                  {CARGOS_MEMBRO[cargo]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {watchCargo === "outro" && (
+                      <FormField
+                        control={form.control}
+                        name="cargoDescricao"
+                        render={({ field }) => (
+                          <FormItem className="sm:col-span-2">
+                            <FormLabel>Descrição do Cargo</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Descreva o cargo" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+
+        {/* Funções e Departamentos */}
+        <Collapsible open={activeSection === "funcoes"} onOpenChange={(open) => setActiveSection(open ? "funcoes" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Funções e Departamentos</CardTitle>
+                    {activeSection !== "funcoes" && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {watchTemFuncao ? "Ativo em funções/departamentos" : "Sem funções específicas"}
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "funcoes" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-6 pt-2">
+                {/* Tem função na igreja? */}
+                <FormField
+                  control={form.control}
+                  name="temFuncaoIgreja"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="cursor-pointer">
+                          Exerce alguma função na igreja?
+                        </FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          Marque se o membro atua em algum ministério ou departamento
+                        </p>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                {watchTemFuncao && (
+                  <>
+                    {/* Funções */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Funções que exerce</Label>
+                      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                        {(Object.keys(FUNCOES_IGREJA) as FuncaoIgreja[]).map((funcao) => (
+                          <div key={funcao} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`funcao-${funcao}`}
+                              checked={watchFuncoes.includes(funcao)}
+                              onCheckedChange={(checked) => {
+                                const current = form.getValues("funcoes") || [];
+                                if (checked) {
+                                  form.setValue("funcoes", [...current, funcao]);
+                                } else {
+                                  form.setValue("funcoes", current.filter(f => f !== funcao));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`funcao-${funcao}`} className="text-sm cursor-pointer">
+                              {FUNCOES_IGREJA[funcao]}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      {watchFuncoes.includes("outro") && (
+                        <FormField
+                          control={form.control}
+                          name="funcaoDescricao"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Descreva a função</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Qual função?" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* Departamentos */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Departamentos que participa</Label>
+                      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                        {(Object.keys(DEPARTAMENTOS) as Departamento[]).map((dept) => (
+                          <div key={dept} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`dept-${dept}`}
+                              checked={watchDepartamentos.includes(dept)}
+                              onCheckedChange={(checked) => {
+                                const current = form.getValues("departamentos") || [];
+                                if (checked) {
+                                  form.setValue("departamentos", [...current, dept]);
+                                } else {
+                                  form.setValue("departamentos", current.filter(d => d !== dept));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`dept-${dept}`} className="text-sm cursor-pointer">
+                              {DEPARTAMENTOS[dept]}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      {watchDepartamentos.includes("outro") && (
+                        <FormField
+                          control={form.control}
+                          name="departamentoDescricao"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Descreva o departamento</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Qual departamento?" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+
+                <Separator />
+
+                {/* É líder? */}
+                <FormField
+                  control={form.control}
+                  name="ehLider"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="cursor-pointer">
+                          É líder de algum grupo ou departamento?
+                        </FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                {watchEhLider && (
                   <FormField
                     control={form.control}
-                    name="cargoDescricao"
+                    name="liderDe"
                     render={({ field }) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>Descrição do Cargo</FormLabel>
+                      <FormItem>
+                        <FormLabel>Líder de qual grupo/departamento?</FormLabel>
                         <FormControl>
-                          <Input placeholder="Descreva o cargo" {...field} />
+                          <Input placeholder="Ex: Grupo de Jovens, Louvor, Célula Centro..." {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
-        {/* Funções e Departamentos */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Funções e Departamentos</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Tem função na igreja? */}
-            <FormField
-              control={form.control}
-              name="temFuncaoIgreja"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel className="cursor-pointer">
-                      Exerce alguma função na igreja?
-                    </FormLabel>
-                    <p className="text-xs text-muted-foreground">
-                      Marque se o membro atua em algum ministério ou departamento
-                    </p>
+        {/* Address */}
+        <Collapsible open={activeSection === "endereco"} onOpenChange={(open) => setActiveSection(open ? "endereco" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Endereço</CardTitle>
+                    {activeSection !== "endereco" && form.watch("logradouro") && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {form.watch("logradouro")}, {form.watch("numero")} - {form.watch("bairro")}, {form.watch("cidade")}/{form.watch("estado")}
+                      </p>
+                    )}
                   </div>
-                </FormItem>
-              )}
-            />
+                  {activeSection === "endereco" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-2">
+                <div className="flex gap-2">
+                  <FormField
+                    control={form.control}
+                    name="cep"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>CEP *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="00000-000"
+                            value={formatCep(field.value)}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+                              field.onChange(digits);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-8"
+                    onClick={buscarCep}
+                    disabled={loadingCep}
+                  >
+                    {loadingCep ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+                    <span className="ml-2 hidden sm:inline">Buscar</span>
+                  </Button>
+                </div>
 
-            {watchTemFuncao && (
-              <>
-                {/* Funções */}
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium">Funções que exerce</Label>
-                  <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                    {(Object.keys(FUNCOES_IGREJA) as FuncaoIgreja[]).map((funcao) => (
-                      <div key={funcao} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`funcao-${funcao}`}
-                          checked={watchFuncoes.includes(funcao)}
-                          onCheckedChange={(checked) => {
-                            const current = form.getValues("funcoes") || [];
-                            if (checked) {
-                              form.setValue("funcoes", [...current, funcao]);
-                            } else {
-                              form.setValue("funcoes", current.filter(f => f !== funcao));
-                            }
-                          }}
-                        />
-                        <Label htmlFor={`funcao-${funcao}`} className="text-sm cursor-pointer">
-                          {FUNCOES_IGREJA[funcao]}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                  {watchFuncoes.includes("outro") && (
-                    <FormField
-                      control={form.control}
-                      name="funcaoDescricao"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Descreva a função</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Qual função?" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="logradouro"
+                    render={({ field }) => (
+                      <FormItem className="sm:col-span-2">
+                        <FormLabel>Logradouro *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Rua, Avenida, etc." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="numero"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Número *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="123" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="complemento"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Complemento</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Apto, Bloco, etc." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="bairro"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bairro *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Bairro" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="cidade"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Cidade *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Cidade" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="estado"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Estado *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="SP" maxLength={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
                 <Separator />
 
-                {/* Departamentos */}
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium">Departamentos que participa</Label>
-                  <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                    {(Object.keys(DEPARTAMENTOS) as Departamento[]).map((dept) => (
-                      <div key={dept} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`dept-${dept}`}
-                          checked={watchDepartamentos.includes(dept)}
-                          onCheckedChange={(checked) => {
-                            const current = form.getValues("departamentos") || [];
-                            if (checked) {
-                              form.setValue("departamentos", [...current, dept]);
-                            } else {
-                              form.setValue("departamentos", current.filter(d => d !== dept));
-                            }
-                          }}
-                        />
-                        <Label htmlFor={`dept-${dept}`} className="text-sm cursor-pointer">
-                          {DEPARTAMENTOS[dept]}
-                        </Label>
-                      </div>
-                    ))}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Localização no Mapa</p>
+                    <p className="text-xs text-muted-foreground">
+                      {coordenadas
+                        ? `Lat: ${coordenadas.lat.toFixed(6)}, Lng: ${coordenadas.lng.toFixed(6)}`
+                        : "Clique para localizar o endereço no mapa"}
+                    </p>
                   </div>
-                  {watchDepartamentos.includes("outro") && (
-                    <FormField
-                      control={form.control}
-                      name="departamentoDescricao"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Descreva o departamento</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Qual departamento?" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
+                  <Button
+                    type="button"
+                    variant={coordenadas ? "outline" : "default"}
+                    onClick={geocodarEndereco}
+                    disabled={loadingGeo}
+                  >
+                    {loadingGeo ? (
+                      <Spinner className="mr-2 h-4 w-4" />
+                    ) : (
+                      <MapPin className="mr-2 h-4 w-4" />
+                    )}
+                    {coordenadas ? "Atualizar Localização" : "Localizar no Mapa"}
+                  </Button>
                 </div>
-              </>
-            )}
-
-            <Separator />
-
-            {/* É líder? */}
-            <FormField
-              control={form.control}
-              name="ehLider"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel className="cursor-pointer">
-                      É líder de algum grupo ou departamento?
-                    </FormLabel>
-                  </div>
-                </FormItem>
-              )}
-            />
-
-            {watchEhLider && (
-              <FormField
-                control={form.control}
-                name="liderDe"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Líder de qual grupo/departamento?</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ex: Grupo de Jovens, Louvor, Célula Centro..." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Address */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Endereço</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <FormField
-                control={form.control}
-                name="cep"
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>CEP *</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="00000-000"
-                        value={formatCep(field.value)}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
-                          field.onChange(digits);
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-8"
-                onClick={buscarCep}
-                disabled={loadingCep}
-              >
-                {loadingCep ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
-                <span className="ml-2 hidden sm:inline">Buscar</span>
-              </Button>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="logradouro"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>Logradouro *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Rua, Avenida, etc." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="numero"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Número *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="123" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="complemento"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Complemento</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Apto, Bloco, etc." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="bairro"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bairro *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Bairro" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="cidade"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cidade *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Cidade" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="estado"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Estado *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="SP" maxLength={2} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Localização no Mapa</p>
-                <p className="text-xs text-muted-foreground">
-                  {coordenadas
-                    ? `Lat: ${coordenadas.lat.toFixed(6)}, Lng: ${coordenadas.lng.toFixed(6)}`
-                    : "Clique para localizar o endereço no mapa"}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant={coordenadas ? "outline" : "default"}
-                onClick={geocodarEndereco}
-                disabled={loadingGeo}
-              >
-                {loadingGeo ? (
-                  <Spinner className="mr-2 h-4 w-4" />
-                ) : (
-                  <MapPin className="mr-2 h-4 w-4" />
-                )}
-                {coordenadas ? "Atualizar Localização" : "Localizar no Mapa"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
         {/* Notes */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Observações</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FormField
-              control={form.control}
-              name="observacoes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Observações adicionais sobre o membro..."
-                      className="min-h-24"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+        <Collapsible open={activeSection === "observacoes"} onOpenChange={(open) => setActiveSection(open ? "observacoes" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base">Observações</CardTitle>
+                    {activeSection !== "observacoes" && form.watch("observacoes") && (
+                      <p className="text-xs text-muted-foreground mt-1 truncate max-w-[300px]">
+                        {form.watch("observacoes")}
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "observacoes" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-2">
+                <FormField
+                  control={form.control}
+                  name="observacoes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Observações adicionais sobre o membro..."
+                          className="min-h-24"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
         {/* Actions */}
         <div className="flex justify-end gap-4">
@@ -1625,4 +1767,4 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
       </form>
     </Form>
   );
-}
+});

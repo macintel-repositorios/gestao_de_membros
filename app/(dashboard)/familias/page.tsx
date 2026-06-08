@@ -79,6 +79,7 @@ export default function FamiliasPage() {
   // Estados para Sheets (Visualizar e Editar)
   const [familiaParaVisualizar, setFamiliaParaVisualizar] = useState<FamiliaComUnidade | null>(null);
   const [familiaParaEditar, setFamiliaParaEditar] = useState<FamiliaComUnidade | null>(null);
+  const [showNovaFamilia, setShowNovaFamilia] = useState(false);
   const [responsavel1, setResponsavel1] = useState<any | null>(null);
   const [responsavel2, setResponsavel2] = useState<any | null>(null);
   const [loadingResponsaveis, setLoadingResponsaveis] = useState(false);
@@ -274,11 +275,9 @@ export default function FamiliasPage() {
           </p>
         </div>
         {canEdit && (
-          <Button asChild>
-            <Link href="/familias/nova">
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Família
-            </Link>
+          <Button onClick={() => setShowNovaFamilia(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Família
           </Button>
         )}
       </div>
@@ -353,11 +352,9 @@ export default function FamiliasPage() {
                   : "Tente ajustar os filtros de busca."}
               </EmptyDescription>
               {familias.length === 0 && canEdit && (
-                <Button asChild className="mt-4">
-                  <Link href="/familias/nova">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Cadastrar Família
-                  </Link>
+                <Button onClick={() => setShowNovaFamilia(true)} className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Cadastrar Família
                 </Button>
               )}
             </Empty>
@@ -674,6 +671,27 @@ export default function FamiliasPage() {
               />
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Cadastrar Nova Família */}
+      <Sheet open={showNovaFamilia} onOpenChange={setShowNovaFamilia}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          <SheetHeader className="p-0">
+            <SheetTitle className="text-2xl font-bold">Nova Família</SheetTitle>
+            <SheetDescription>
+              Cadastre uma nova família no sistema.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="pt-4">
+            <FamiliaForm
+              onSuccess={() => {
+                setShowNovaFamilia(false);
+                toast.success("Família cadastrada com sucesso!");
+                loadFamilias();
+              }}
+            />
+          </div>
         </SheetContent>
       </Sheet>
     </div>

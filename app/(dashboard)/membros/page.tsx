@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -118,9 +118,11 @@ export default function MembrosPage() {
   const [memberToDeactivate, setMemberToDeactivate] = useState<MembroComUnidade | null>(null);
 
   // Estados para Drawer/Sheet
-  const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade | null>(null);
-  const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade | null>(null);
-  const [membroParaCartao, setMembroParaCartao] = useState<MembroComUnidade | null>(null);
+  const editFormRef = useRef<any>(null);
+  const [showNovoMembro, setShowNovoMembro] = useState(false);
+  const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade[] | any>(null);
+  const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade[] | any>(null);
+  const [membroParaCartao, setMembroParaCartao] = useState<MembroComUnidade[] | any>(null);
   const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
   const [loadingAcomp, setLoadingAcomp] = useState(false);
 
@@ -236,6 +238,20 @@ export default function MembrosPage() {
           cep: row.cep || "",
         },
         criadoPor: row.criado_por || "",
+        // Mapeamento dos campos adicionais que estavam faltando
+        sexo: row.sexo || undefined,
+        estadoCivil: row.estado_civil || undefined,
+        nomeConjuge: row.nome_conjuge || "",
+        conjugeId: row.conjuge_id || undefined,
+        temFuncaoIgreja: row.tem_funcao_igreja || false,
+        funcoes: row.funcoes || [],
+        funcaoDescricao: row.funcao_descricao || "",
+        departamentos: row.departamentos || [],
+        departamento_descricao: row.departamento_descricao || "",
+        ehLider: row.eh_lider || false,
+        liderDe: row.lider_de || "",
+        grupoId: row.grupo_id || undefined,
+        dataConversao: row.data_conversao ? { toDate: () => new Date(row.data_conversao + "T12:00:00") } : undefined,
       }));
 
       setMembros(list);
@@ -329,11 +345,9 @@ export default function MembrosPage() {
             />
           )}
           {canEdit && (
-            <Button asChild>
-              <Link href="/membros/novo">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Novo Membro
-              </Link>
+            <Button onClick={() => setShowNovoMembro(true)}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Novo Membro
             </Button>
           )}
         </div>
@@ -442,11 +456,9 @@ export default function MembrosPage() {
                   : "Tente ajustar os filtros de busca."}
               </EmptyDescription>
               {membros.length === 0 && canEdit && (
-                <Button asChild className="mt-4">
-                  <Link href="/membros/novo">
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Cadastrar Membro
-                  </Link>
+                <Button onClick={() => setShowNovoMembro(true)} className="mt-4">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Cadastrar Membro
                 </Button>
               )}
             </Empty>
@@ -827,7 +839,25 @@ export default function MembrosPage() {
       </Sheet>
 
       {/* Sheet para Editar Membro */}
-      <Sheet open={!!membroParaEditar} onOpenChange={(open) => !open && setMembroParaEditar(null)}>
+      <Sheet 
+        open={!!membroParaEditar} 
+        onOpenChange={async (open) => {
+          if (!open) {
+            if (editFormRef.current?.isDirty()) {
+              toast.loading("Salvando alterações...");
+              const success = await editFormRef.current.submitForm();
+              toast.dismiss();
+              if (success) {
+                toast.success("Alterações salvas automaticamente!");
+              } else {
+                toast.error("Erro ao salvar alterações automáticas. Verifique os campos obrigatórios.");
+                return;
+              }
+            }
+            setMembroParaEditar(null);
+          }
+        }}
+      >
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
           {membroParaEditar && (
             <div className="space-y-6 pt-4">
@@ -838,6 +868,7 @@ export default function MembrosPage() {
                 </SheetDescription>
               </SheetHeader>
               <MembroForm
+                ref={editFormRef}
                 membro={membroParaEditar}
                 unidadeIdParam={membroParaEditar.unidadeId}
                 onSuccess={() => {
@@ -848,6 +879,27 @@ export default function MembrosPage() {
               />
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Cadastrar Novo Membro */}
+      <Sheet open={showNovoMembro} onOpenChange={setShowNovoMembro}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          <SheetHeader className="p-0">
+            <SheetTitle className="text-2xl font-bold">Novo Membro</SheetTitle>
+            <SheetDescription>
+              Cadastre um novo membro no sistema.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="pt-4">
+            <MembroForm
+              onSuccess={() => {
+                setShowNovoMembro(false);
+                toast.success("Membro cadastrado com sucesso!");
+                loadMembros();
+              }}
+            />
+          </div>
         </SheetContent>
       </Sheet>
 

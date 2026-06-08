@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Users } from "lucide-react";
+import { Plus, Trash2, Users, ChevronDown, ChevronUp } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Acompanhante, Visitante } from "@/lib/types";
 
 interface VisitanteFormProps {
@@ -31,6 +32,7 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
   const router = useRouter();
   const { user, igrejaId, unidadesAcessiveis, todasUnidades, unidadeId: defaultUnidadeId } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(visitante ? null : "dados");
 
   // Dados do visitante
   const [nome, setNome] = useState(visitante?.nome || "");
@@ -192,219 +194,276 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
   return (
     <form onSubmit={handleSubmit} className="space-y-6 pt-2">
       {/* Dados Básicos */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Dados do Visitante</CardTitle>
-          <CardDescription>Informações principais do visitante</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="nome">Nome Completo *</Label>
-              <Input
-                id="nome"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Nome do visitante"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="telefone">WhatsApp *</Label>
-              <Input
-                id="telefone"
-                value={telefone}
-                onChange={(e) => setTelefone(formatPhoneInput(e.target.value))}
-                placeholder="11999999999"
-                maxLength={11}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="dataNascimento">Data de Nascimento</Label>
-              <Input
-                id="dataNascimento"
-                type="date"
-                value={dataNascimento}
-                onChange={(e) => setDataNascimento(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dataVisita">Data da Visita *</Label>
-              <Input
-                id="dataVisita"
-                type="date"
-                value={dataVisita}
-                onChange={(e) => setDataVisita(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          {unidadesParaSelecao.length > 1 && !visitante && (
-            <div className="space-y-2">
-              <Label htmlFor="unidade">Unidade *</Label>
-              <Select value={unidadeId} onValueChange={setUnidadeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a unidade" />
-                </SelectTrigger>
-                <SelectContent>
-                  {unidadesParaSelecao.map((unidade) => (
-                    <SelectItem key={unidade.id} value={unidade.id}>
-                      {unidade.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Acompanhantes */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Acompanhantes
-              </CardTitle>
-              <CardDescription>Pessoas que vieram junto com o visitante</CardDescription>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={addAcompanhante}>
-              <Plus className="mr-2 h-4 w-4" />
-              Adicionar
-            </Button>
-          </div>
-        </CardHeader>
-        {acompanhantes.length > 0 && (
-          <CardContent className="space-y-4">
-            {acompanhantes.map((acomp, index) => (
-              <div key={index} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">
-                    Acompanhante {index + 1}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeAcompanhante(index)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+      <Collapsible open={activeSection === "dados"} onOpenChange={(open) => setActiveSection(open ? "dados" : null)} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">Dados do Visitante</CardTitle>
+                  <CardDescription>Informações principais do visitante</CardDescription>
+                  {activeSection !== "dados" && nome && (
+                    <p className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                      <span>Nome: <span className="font-semibold text-primary">{nome}</span></span>
+                      {telefone && (
+                        <span>• WhatsApp: <span className="font-semibold text-primary">{telefone}</span></span>
+                      )}
+                      {dataVisita && (
+                        <span>• Visita: <span className="font-semibold text-primary">{dataVisita}</span></span>
+                      )}
+                    </p>
+                  )}
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                {activeSection === "dados" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-2">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="nome">Nome Completo *</Label>
                   <Input
-                    placeholder="Nome"
-                    value={acomp.nome}
-                    onChange={(e) => updateAcompanhante(index, "nome", e.target.value)}
+                    id="nome"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Nome do visitante"
+                    required
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="telefone">WhatsApp *</Label>
                   <Input
-                    placeholder="WhatsApp"
-                    value={acomp.telefone}
-                    onChange={(e) => updateAcompanhante(index, "telefone", formatPhoneInput(e.target.value))}
+                    id="telefone"
+                    value={telefone}
+                    onChange={(e) => setTelefone(formatPhoneInput(e.target.value))}
+                    placeholder="11999999999"
                     maxLength={11}
-                  />
-                  <Input
-                    type="date"
-                    placeholder="Nascimento"
-                    value={acomp.dataNascimento?.toDate ? acomp.dataNascimento.toDate().toISOString().split("T")[0] : ""}
-                    onChange={(e) => updateAcompanhante(index, "dataNascimento", e.target.value)}
-                  />
-                  <Input
-                    placeholder="Parentesco (ex: esposa, filho)"
-                    value={acomp.parentesco || ""}
-                    onChange={(e) => updateAcompanhante(index, "parentesco", e.target.value)}
+                    required
                   />
                 </div>
               </div>
-            ))}
-          </CardContent>
-        )}
-      </Card>
 
-      {/* Perguntas */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Informações Adicionais</CardTitle>
-          <CardDescription>Perguntas do cartão de visitante</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="primeiraVisita"
-              checked={primeiraVisita}
-              onCheckedChange={(checked) => setPrimeiraVisita(!!checked)}
-            />
-            <Label htmlFor="primeiraVisita">Primeira visita em nossa igreja?</Label>
-          </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="dataNascimento">Data de Nascimento</Label>
+                  <Input
+                    id="dataNascimento"
+                    type="date"
+                    value={dataNascimento}
+                    onChange={(e) => setDataNascimento(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dataVisita">Data da Visita *</Label>
+                  <Input
+                    id="dataVisita"
+                    type="date"
+                    value={dataVisita}
+                    onChange={(e) => setDataVisita(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
 
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="jaRecebeuJesus"
-              checked={jaRecebeuJesus === true}
-              onCheckedChange={(checked) => setJaRecebeuJesus(!!checked)}
-            />
-            <Label htmlFor="jaRecebeuJesus">Já recebeu Jesus Cristo?</Label>
-          </div>
+              {unidadesParaSelecao.length > 1 && !visitante && (
+                <div className="space-y-2">
+                  <Label htmlFor="unidade">Unidade *</Label>
+                  <Select value={unidadeId} onValueChange={setUnidadeId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a unidade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {unidadesParaSelecao.map((unidade) => (
+                        <SelectItem key={unidade.id} value={unidade.id}>
+                          {unidade.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
-          <div className="space-y-3">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="pertenceIgreja"
-                checked={pertenceIgreja === true}
-                onCheckedChange={(checked) => setPertenceIgreja(!!checked)}
-              />
-              <Label htmlFor="pertenceIgreja">Pertence a alguma igreja?</Label>
-            </div>
-            {pertenceIgreja && (
-              <Input
-                placeholder="Qual igreja?"
-                value={qualIgreja}
-                onChange={(e) => setQualIgreja(e.target.value)}
-                className="ml-6"
-              />
+      {/* Acompanhantes */}
+      <Collapsible open={activeSection === "acompanhantes"} onOpenChange={(open) => setActiveSection(open ? "acompanhantes" : null)} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Acompanhantes
+                  </CardTitle>
+                  <CardDescription>Pessoas que vieram junto com o visitante</CardDescription>
+                  {activeSection !== "acompanhantes" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {acompanhantes.length > 0
+                        ? `${acompanhantes.length} acompanhante(s)`
+                        : "Nenhum acompanhante cadastrado"}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); addAcompanhante(); }}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar
+                  </Button>
+                  {activeSection === "acompanhantes" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            {acompanhantes.length > 0 && (
+              <CardContent className="space-y-4 pt-2">
+                {acompanhantes.map((acomp, index) => (
+                  <div key={index} className="rounded-lg border p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Acompanhante {index + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeAcompanhante(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Input
+                        placeholder="Nome"
+                        value={acomp.nome}
+                        onChange={(e) => updateAcompanhante(index, "nome", e.target.value)}
+                      />
+                      <Input
+                        placeholder="WhatsApp"
+                        value={acomp.telefone}
+                        onChange={(e) => updateAcompanhante(index, "telefone", formatPhoneInput(e.target.value))}
+                        maxLength={11}
+                      />
+                      <Input
+                        type="date"
+                        placeholder="Nascimento"
+                        value={acomp.dataNascimento?.toDate ? acomp.dataNascimento.toDate().toISOString().split("T")[0] : ""}
+                        onChange={(e) => updateAcompanhante(index, "dataNascimento", e.target.value)}
+                      />
+                      <Input
+                        placeholder="Parentesco (ex: esposa, filho)"
+                        value={acomp.parentesco || ""}
+                        onChange={(e) => updateAcompanhante(index, "parentesco", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
             )}
-          </div>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
-          <div className="space-y-2">
-            <Label htmlFor="convidadoPor">Convidado por alguém?</Label>
-            <Input
-              id="convidadoPor"
-              placeholder="Nome de quem convidou"
-              value={convidadoPor}
-              onChange={(e) => setConvidadoPor(e.target.value)}
-            />
-          </div>
+      {/* Informações Adicionais */}
+      <Collapsible open={activeSection === "adicionais"} onOpenChange={(open) => setActiveSection(open ? "adicionais" : null)} className="w-full">
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">Informações Adicionais</CardTitle>
+                  <CardDescription>Perguntas do cartão de visitante</CardDescription>
+                  {activeSection !== "adicionais" && (
+                    <p className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2">
+                      <span>Primeira visita: <span className="font-semibold text-primary">{primeiraVisita ? "Sim" : "Não"}</span></span>
+                      {jaRecebeuJesus && (
+                        <span>• Já recebeu Jesus</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                {activeSection === "adicionais" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="primeiraVisita"
+                  checked={primeiraVisita}
+                  onCheckedChange={(checked) => setPrimeiraVisita(!!checked)}
+                />
+                <Label htmlFor="primeiraVisita">Primeira visita em nossa igreja?</Label>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pedidoOracao">Pedido de Oração</Label>
-            <Textarea
-              id="pedidoOracao"
-              placeholder="Algum pedido de oração?"
-              value={pedidoOracao}
-              onChange={(e) => setPedidoOracao(e.target.value)}
-              rows={3}
-            />
-          </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="jaRecebeuJesus"
+                  checked={jaRecebeuJesus === true}
+                  onCheckedChange={(checked) => setJaRecebeuJesus(!!checked)}
+                />
+                <Label htmlFor="jaRecebeuJesus">Já recebeu Jesus Cristo?</Label>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="observacoes">Observações</Label>
-            <Textarea
-              id="observacoes"
-              placeholder="Observações adicionais..."
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              rows={2}
-            />
-          </div>
-        </CardContent>
-      </Card>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="pertenceIgreja"
+                    checked={pertenceIgreja === true}
+                    onCheckedChange={(checked) => setPertenceIgreja(!!checked)}
+                  />
+                  <Label htmlFor="pertenceIgreja">Pertence a alguma igreja?</Label>
+                </div>
+                {pertenceIgreja && (
+                  <Input
+                    placeholder="Qual igreja?"
+                    value={qualIgreja}
+                    onChange={(e) => setQualIgreja(e.target.value)}
+                    className="ml-6"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="convidadoPor">Convidado por alguém?</Label>
+                <Input
+                  id="convidadoPor"
+                  placeholder="Nome de quem convidou"
+                  value={convidadoPor}
+                  onChange={(e) => setConvidadoPor(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pedidoOracao">Pedido de Oração</Label>
+                <Textarea
+                  id="pedidoOracao"
+                  placeholder="Algum pedido de oração?"
+                  value={pedidoOracao}
+                  onChange={(e) => setPedidoOracao(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="observacoes">Observações</Label>
+                <Textarea
+                  id="observacoes"
+                  placeholder="Observações adicionais..."
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  rows={2}
+                />
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Ações */}
       <div className="flex justify-end gap-4">

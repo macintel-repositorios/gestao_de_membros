@@ -88,6 +88,7 @@ export default function VisitantesPage() {
   // Estados para Sheets (Visualizar e Editar)
   const [visitanteParaVisualizar, setVisitanteParaVisualizar] = useState<VisitanteComUnidade | null>(null);
   const [visitanteParaEditar, setVisitanteParaEditar] = useState<VisitanteComUnidade | null>(null);
+  const [showNovoVisitante, setShowNovoVisitante] = useState(false);
 
   const canEdit = nivelAcesso === "admin" || nivelAcesso === "full";
 
@@ -248,11 +249,9 @@ export default function VisitantesPage() {
             />
           )}
           {canEdit && (
-            <Button asChild>
-              <Link href="/visitantes/novo">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Novo Visitante
-              </Link>
+            <Button onClick={() => setShowNovoVisitante(true)}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Novo Visitante
             </Button>
           )}
         </div>
@@ -384,11 +383,9 @@ export default function VisitantesPage() {
                     <Share2 className="mr-2 h-4 w-4" />
                     Compartilhar Link
                   </Button>
-                  <Button asChild>
-                    <Link href="/visitantes/novo">
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Cadastrar Visitante
-                    </Link>
+                  <Button onClick={() => setShowNovoVisitante(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Cadastrar Visitante
                   </Button>
                 </div>
               )}
@@ -700,6 +697,27 @@ export default function VisitantesPage() {
               />
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Cadastrar Novo Visitante */}
+      <Sheet open={showNovoVisitante} onOpenChange={setShowNovoVisitante}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
+          <SheetHeader className="p-0">
+            <SheetTitle className="text-2xl font-bold">Novo Visitante</SheetTitle>
+            <SheetDescription>
+              Cadastre um novo visitante no sistema.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="pt-4">
+            <VisitanteForm
+              onSuccess={() => {
+                setShowNovoVisitante(false);
+                toast.success("Visitante cadastrado com sucesso!");
+                loadVisitantes();
+              }}
+            />
+          </div>
         </SheetContent>
       </Sheet>
     </div>

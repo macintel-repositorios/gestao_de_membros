@@ -37,6 +37,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { GrupoForm } from "@/components/grupos/grupo-form";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
@@ -83,6 +84,7 @@ export default function GruposPage() {
   // Estados para Sheets (Visualizar e Editar)
   const [grupoParaVisualizar, setGrupoParaVisualizar] = useState<GrupoComDetalhes | null>(null);
   const [grupoParaEditar, setGrupoParaEditar] = useState<GrupoComDetalhes | null>(null);
+  const [showNovoGrupo, setShowNovoGrupo] = useState(false);
   const [membrosDoGrupo, setMembrosDoGrupo] = useState<Membro[]>([]);
   const [loadingMembros, setLoadingMembros] = useState(false);
 
@@ -293,11 +295,9 @@ export default function GruposPage() {
             {grupos.length !== 1 && "s"}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/grupos/novo">
-            <Plus className="mr-2 h-4 w-4" />
-            Criar Grupo
-          </Link>
+        <Button onClick={() => setShowNovoGrupo(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Criar Grupo
         </Button>
       </div>
 
@@ -326,11 +326,9 @@ export default function GruposPage() {
                 Crie grupos de WhatsApp baseados na proximidade dos membros para
                 facilitar estudos, visitas e acompanhamento.
               </EmptyDescription>
-              <Button asChild className="mt-4">
-                <Link href="/grupos/novo">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Criar Primeiro Grupo
-                </Link>
+              <Button onClick={() => setShowNovoGrupo(true)} className="mt-4">
+                <Plus className="mr-2 h-4 w-4" />
+                Criar Primeiro Grupo
               </Button>
             </Empty>
           </CardContent>
@@ -629,6 +627,24 @@ export default function GruposPage() {
               </form>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sheet para Criar Novo Grupo */}
+      <Sheet open={showNovoGrupo} onOpenChange={setShowNovoGrupo}>
+        <SheetContent className="w-full sm:max-w-4xl overflow-y-auto p-6">
+          <SheetHeader className="p-0">
+            <SheetTitle className="text-2xl font-bold">Criar Grupo</SheetTitle>
+            <SheetDescription>
+              Selecione um líder e encontre membros próximos.
+            </SheetDescription>
+          </SheetHeader>
+          <GrupoForm
+            onSuccess={() => {
+              setShowNovoGrupo(false);
+              loadGrupos();
+            }}
+          />
         </SheetContent>
       </Sheet>
     </div>
