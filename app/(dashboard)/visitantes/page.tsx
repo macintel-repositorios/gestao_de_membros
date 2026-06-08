@@ -77,7 +77,7 @@ interface VisitanteComUnidade extends Visitante {
 }
 
 export default function VisitantesPage() {
-  const { igrejaId, unidadeAtual, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
+  const { igrejaId, igrejaNome, unidadeAtual, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
   const [visitantes, setVisitantes] = useState<VisitanteComUnidade[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -682,8 +682,13 @@ export default function VisitantesPage() {
             <div className="space-y-6 pt-4">
               <SheetHeader className="p-0">
                 <SheetTitle className="text-2xl font-bold">Editar Visitante</SheetTitle>
-                <SheetDescription>
-                  Atualize as informações cadastrais de {visitanteParaEditar.nome}
+                <SheetDescription className="flex flex-col gap-0.5">
+                  <span>Atualize as informações cadastrais de {visitanteParaEditar.nome}</span>
+                  {igrejaNome && (
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                    </span>
+                  )}
                 </SheetDescription>
               </SheetHeader>
               <VisitanteForm
@@ -705,8 +710,13 @@ export default function VisitantesPage() {
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
           <SheetHeader className="p-0">
             <SheetTitle className="text-2xl font-bold">Novo Visitante</SheetTitle>
-            <SheetDescription>
-              Cadastre um novo visitante no sistema.
+            <SheetDescription className="flex flex-col gap-0.5">
+              <span>Cadastre um novo visitante no sistema.</span>
+              {igrejaNome && (
+                <span className="text-xs text-muted-foreground mt-0.5">
+                  Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                </span>
+              )}
             </SheetDescription>
           </SheetHeader>
           <div className="pt-4">

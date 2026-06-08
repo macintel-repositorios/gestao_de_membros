@@ -69,7 +69,7 @@ interface FamiliaComUnidade extends Familia {
 }
 
 export default function FamiliasPage() {
-  const { igrejaId, unidadeAtual, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
+  const { igrejaId, igrejaNome, unidadeAtual, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
   const [familias, setFamilias] = useState<FamiliaComUnidade[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -656,8 +656,13 @@ export default function FamiliasPage() {
             <div className="space-y-6 pt-4">
               <SheetHeader className="p-0">
                 <SheetTitle className="text-2xl font-bold">Editar Família</SheetTitle>
-                <SheetDescription>
-                  Atualize os dados e membros da {familiaParaEditar.nome}
+                <SheetDescription className="flex flex-col gap-0.5">
+                  <span>Atualize os dados e membros da {familiaParaEditar.nome}</span>
+                  {igrejaNome && (
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                    </span>
+                  )}
                 </SheetDescription>
               </SheetHeader>
               <FamiliaForm
@@ -679,8 +684,13 @@ export default function FamiliasPage() {
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
           <SheetHeader className="p-0">
             <SheetTitle className="text-2xl font-bold">Nova Família</SheetTitle>
-            <SheetDescription>
-              Cadastre uma nova família no sistema.
+            <SheetDescription className="flex flex-col gap-0.5">
+              <span>Cadastre uma nova família no sistema.</span>
+              {igrejaNome && (
+                <span className="text-xs text-muted-foreground mt-0.5">
+                  Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                </span>
+              )}
             </SheetDescription>
           </SheetHeader>
           <div className="pt-4">

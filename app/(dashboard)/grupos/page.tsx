@@ -74,7 +74,7 @@ interface GrupoComDetalhes extends Grupo {
 }
 
 export default function GruposPage() {
-  const { igrejaId, unidadesAcessiveis, unidadeId } = useAuth();
+  const { igrejaId, igrejaNome, unidadesAcessiveis, unidadeId } = useAuth();
   const [grupos, setGrupos] = useState<GrupoComDetalhes[]>([]);
   const [loading, setLoading] = useState(true);
   const [grupoToDelete, setGrupoToDelete] = useState<GrupoComDetalhes | null>(
@@ -572,8 +572,13 @@ export default function GruposPage() {
             <div className="space-y-6 pt-4">
               <SheetHeader className="p-0">
                 <SheetTitle className="text-2xl font-bold">Editar Grupo</SheetTitle>
-                <SheetDescription>
-                  Atualize as configurações básicas do grupo
+                <SheetDescription className="flex flex-col gap-0.5">
+                  <span>Atualize as configurações básicas do grupo</span>
+                  {igrejaNome && (
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                    </span>
+                  )}
                 </SheetDescription>
               </SheetHeader>
               
@@ -635,8 +640,13 @@ export default function GruposPage() {
         <SheetContent className="w-full sm:max-w-4xl overflow-y-auto p-6">
           <SheetHeader className="p-0">
             <SheetTitle className="text-2xl font-bold">Criar Grupo</SheetTitle>
-            <SheetDescription>
-              Selecione um líder e encontre membros próximos.
+            <SheetDescription className="flex flex-col gap-0.5">
+              <span>Selecione um líder e encontre membros próximos.</span>
+              {igrejaNome && (
+                <span className="text-xs text-muted-foreground mt-0.5">
+                  Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                </span>
+              )}
             </SheetDescription>
           </SheetHeader>
           <GrupoForm

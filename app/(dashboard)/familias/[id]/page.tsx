@@ -39,7 +39,7 @@ export default function FamiliaDetalhesPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { igrejaId, unidadesAcessiveis, nivelAcesso } = useAuth();
+  const { igrejaId, unidadesAcessiveis, nivelAcesso, igrejaNome } = useAuth();
   
   const familiaId = params.id as string;
   const unidadeIdParam = searchParams.get("unidade");
@@ -186,8 +186,13 @@ export default function FamiliaDetalhesPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">{familia.nome}</h1>
-              <p className="text-muted-foreground">
-                Cadastrada em {familia.dataCriacao && format(familia.dataCriacao.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+              <p className="text-muted-foreground flex flex-col gap-0.5">
+                <span>Cadastrada em {familia.dataCriacao && format(familia.dataCriacao.toDate(), "dd/MM/yyyy", { locale: ptBR })}</span>
+                {igrejaNome && (
+                  <span className="text-xs text-muted-foreground mt-0.5">
+                    Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                  </span>
+                )}
               </p>
             </div>
           </div>

@@ -17,7 +17,7 @@ export default function EditarFamiliaPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { igrejaId, unidadesAcessiveis, nivelAcesso } = useAuth();
+  const { igrejaId, unidadesAcessiveis, nivelAcesso, igrejaNome } = useAuth();
   
   const familiaId = params.id as string;
   const unidadeIdParam = searchParams.get("unidade");
@@ -104,8 +104,13 @@ export default function EditarFamiliaPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Editar Família</h1>
-        <p className="text-muted-foreground">
-          Atualize os dados da {familia.nome}
+        <p className="text-muted-foreground flex flex-col gap-0.5">
+          <span>Atualize os dados da {familia.nome}</span>
+          {igrejaNome && (
+            <span className="text-xs text-muted-foreground mt-0.5">
+              Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+            </span>
+          )}
         </p>
       </div>
       <FamiliaForm familia={familia} unidadeIdParam={familia.unidadeId} />

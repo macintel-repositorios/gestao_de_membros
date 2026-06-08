@@ -107,7 +107,7 @@ const ICONES_ACOMPANHAMENTO: Record<TipoAcompanhamento, React.ComponentType<{ cl
 };
 
 export default function MembrosPage() {
-  const { usuario, igrejaId, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
+  const { usuario, igrejaId, igrejaNome, unidadesAcessiveis, todasUnidades, nivelAcesso, temAcessoTotal } = useAuth();
   const { unidadeSelecionada, visualizandoTodas } = useUnidadeSelecionada();
   const [membros, setMembros] = useState<MembroComUnidade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -863,8 +863,13 @@ export default function MembrosPage() {
             <div className="space-y-6 pt-4">
               <SheetHeader className="p-0">
                 <SheetTitle className="text-2xl font-bold">Editar Membro</SheetTitle>
-                <SheetDescription>
-                  Atualize as informações cadastrais de {membroParaEditar.nome}
+                <SheetDescription className="flex flex-col gap-0.5">
+                  <span>Atualize as informações cadastrais de {membroParaEditar.nome}</span>
+                  {igrejaNome && (
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                    </span>
+                  )}
                 </SheetDescription>
               </SheetHeader>
               <MembroForm
@@ -887,8 +892,13 @@ export default function MembrosPage() {
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6">
           <SheetHeader className="p-0">
             <SheetTitle className="text-2xl font-bold">Novo Membro</SheetTitle>
-            <SheetDescription>
-              Cadastre um novo membro no sistema.
+            <SheetDescription className="flex flex-col gap-0.5">
+              <span>Cadastre um novo membro no sistema.</span>
+              {igrejaNome && (
+                <span className="text-xs text-muted-foreground mt-0.5">
+                  Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+                </span>
+              )}
             </SheetDescription>
           </SheetHeader>
           <div className="pt-4">

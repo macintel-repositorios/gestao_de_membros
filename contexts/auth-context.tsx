@@ -20,6 +20,7 @@ interface AuthContextType {
   unidadeAtual: Unidade | null;
   unidadesAcessiveis: string[]; // IDs das unidades que o usuário pode acessar
   todasUnidades: Unidade[]; // Todas as unidades carregadas
+  igrejaNome: string | null;
   nivelAcesso: NivelAcesso | null;
   loading: boolean;
   isConfigured: boolean;
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [unidadesAcessiveis, setUnidadesAcessiveis] = useState<string[]>([]);
   const [todasUnidades, setTodasUnidades] = useState<Unidade[]>([]);
   const [nivelAcesso, setNivelAcesso] = useState<NivelAcesso | null>(null);
+  const [igrejaNome, setIgrejaNome] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const isConfigured = !!(
@@ -53,10 +55,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUnidadesAcessiveis([]);
         setTodasUnidades([]);
         setUnidadeAtual(null);
+        setIgrejaNome(null);
         return;
       }
 
       try {
+        // Busca o nome da igreja
+        const { data: igrejaData } = await supabase
+          .from("igrejas")
+          .select("nome")
+          .eq("id", igrejaId)
+          .single();
+        if (igrejaData) {
+          setIgrejaNome(igrejaData.nome);
+        }
+
         const unidades = await carregarTodasUnidades(igrejaId);
         setTodasUnidades(unidades);
 
@@ -182,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setUsuario(null);
     setIgrejaId(null);
+    setIgrejaNome(null);
     setUnidadeId(null);
     setNivelAcesso(null);
     setUnidadesAcessiveis([]);
@@ -208,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unidadeAtual,
         unidadesAcessiveis,
         todasUnidades,
+        igrejaNome,
         nivelAcesso,
         loading,
         isConfigured,
