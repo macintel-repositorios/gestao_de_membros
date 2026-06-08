@@ -127,7 +127,7 @@ export default function VisitantesPage() {
         membroId: row.membro_id || undefined,
         unidadeId: row.unidade_id,
         ativo: row.ativo ?? true,
-        dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : undefined,
+        dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
       }));
 
       setVisitantes(list);

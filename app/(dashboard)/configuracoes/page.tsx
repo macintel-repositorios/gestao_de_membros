@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Shield, Users, Settings, Phone, UserX } from "lucide-react";
-import { Usuario, Grupo, NivelAcesso, NIVEIS_ACESSO } from "@/lib/types";
+import { Usuario, Grupo, NivelAcesso, NIVEIS_ACESSO, Timestamp } from "@/lib/types";
 
 export default function ConfiguracoesPage() {
   const router = useRouter();
@@ -79,7 +79,7 @@ export default function ConfiguracoesPage() {
         igrejaId: u.igreja_id,
         unidadeId: u.unidade_id,
         ativo: u.ativo,
-        dataCriacao: u.data_criacao,
+        dataCriacao: u.data_criacao ? { toDate: () => new Date(u.data_criacao) } : { toDate: () => new Date() },
       })));
 
       // Load groups
@@ -178,9 +178,9 @@ export default function ConfiguracoesPage() {
     return phone;
   };
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return "-";
-    return new Date(dateString).toLocaleDateString("pt-BR");
+  const formatDate = (date: Timestamp | undefined) => {
+    if (!date) return "-";
+    return date.toDate().toLocaleDateString("pt-BR");
   };
 
   const getNivelBadgeVariant = (nivel: NivelAcesso) => {
@@ -424,10 +424,16 @@ export default function ConfiguracoesPage() {
                           variant="outline"
                           size="sm"
                           onClick={async () => {
-                            await updateDoc(doc(db, "usuarios", user.uid), {
-                              ativo: true,
-                            });
-                            toast.success("Usuário reativado");
+                            const { error } = await supabase
+                              .from("usuarios")
+                              .update({ ativo: true })
+                              .eq("id", user.uid);
+                            if (error) {
+                              toast.error("Erro ao reativar usuário");
+                            } else {
+                              toast.success("Usuário reativado");
+                              loadConfigData();
+                            }
                           }}
                         >
                           Reativar

@@ -158,6 +158,7 @@ export interface Usuario {
   uid: string;
   telefone: string;
   nome: string;
+  email?: string;
   nivelAcesso: NivelAcesso;
   membroId?: string;
   grupoId?: string; // ID do grupo que o líder gerencia
@@ -228,6 +229,7 @@ export interface Acompanhamento {
   proximoContato?: Timestamp;
   observacoes?: string;
   dataCriacao: Timestamp;
+  unidadeId?: string;
 }
 
 // Labels for display

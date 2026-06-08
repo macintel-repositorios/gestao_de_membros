@@ -147,8 +147,11 @@ export default function MembrosPage() {
           tipo: row.tipo as TipoAcompanhamento,
           data: { toDate: () => new Date(row.data) },
           descricao: row.descricao,
-          responsavelNome: row.responsavel_nome,
+          responsavelNome: row.responsavel_nome || "",
           membroId: row.membro_id,
+          membroNome: membroParaVisualizar.nome,
+          responsavelUid: row.responsavel_uid || "",
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
         }));
         
         setAcompanhamentos(list);
@@ -219,10 +222,10 @@ export default function MembrosPage() {
         ativo: row.ativo ?? (row.situacao === "ativo"),
         observacoes: row.observacoes || "",
         dataNascimento: row.data_nascimento ? { toDate: () => new Date(row.data_nascimento + "T12:00:00") } : undefined,
-        dataCadastro: row.data_cadastro ? { toDate: () => new Date(row.data_cadastro + "T12:00:00") } : undefined,
+        dataCadastro: row.data_cadastro ? { toDate: () => new Date(row.data_cadastro + "T12:00:00") } : { toDate: () => new Date() },
         dataBatismo: row.data_batismo ? { toDate: () => new Date(row.data_batismo + "T12:00:00") } : undefined,
         unidadeId: row.unidade_id,
-        coordenadas: row.latitude && row.longitude ? { lat: row.latitude, lng: row.longitude } : undefined,
+        coordenadas: row.latitude && row.longitude ? { lat: row.latitude, lng: row.longitude } : { lat: 0, lng: 0 },
         endereco: {
           logradouro: row.logradouro || "",
           numero: row.numero || "",
@@ -231,7 +234,8 @@ export default function MembrosPage() {
           cidade: row.cidade || "",
           estado: row.estado || "",
           cep: row.cep || "",
-        }
+        },
+        criadoPor: row.criado_por || "",
       }));
 
       setMembros(list);

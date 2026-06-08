@@ -288,7 +288,7 @@ export function FamiliaForm({ familia, unidadeIdParam, onSuccess }: FamiliaFormP
           .from("familias")
           .insert({
             ...familiaData,
-            criado_por: user.uid,
+            criado_por: user.id,
           });
 
         if (error) throw error;

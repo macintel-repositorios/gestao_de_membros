@@ -63,7 +63,7 @@ import {
   Phone,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Grupo, Membro, TIPOS_GRUPO } from "@/lib/types";
+import { Grupo, Membro, TIPOS_GRUPO, TipoGrupo } from "@/lib/types";
 
 interface GrupoComDetalhes extends Grupo {
   liderNome?: string;
@@ -184,7 +184,7 @@ export default function GruposPage() {
           membrosIds: membrosIds,
           membrosNomes: membrosIds.map((id: string) => membrosMap.get(id) || "Desconhecido").slice(0, 3),
           linkWhatsApp: row.link_whatsapp || "",
-          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : undefined,
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
           ativo: row.ativo,
           unidadeId: row.unidade_id,
         };
@@ -598,7 +598,7 @@ export default function GruposPage() {
                       <SelectValue placeholder="Selecione o tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(Object.keys(TIPOS_GRUPO) as any[]).map((tipo) => (
+                      {(Object.keys(TIPOS_GRUPO) as TipoGrupo[]).map((tipo) => (
                         <SelectItem key={tipo} value={tipo}>
                           {TIPOS_GRUPO[tipo]}
                         </SelectItem>

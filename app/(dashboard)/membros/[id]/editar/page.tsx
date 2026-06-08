@@ -50,10 +50,10 @@ export default function EditarMembroPage() {
           ativo: data.ativo,
           observacoes: data.observacoes || "",
           dataNascimento: data.data_nascimento ? { toDate: () => new Date(data.data_nascimento + "T12:00:00") } : undefined,
-          dataCadastro: data.data_cadastro ? { toDate: () => new Date(data.data_cadastro + "T12:00:00") } : undefined,
+          dataCadastro: data.data_cadastro ? { toDate: () => new Date(data.data_cadastro + "T12:00:00") } : { toDate: () => new Date() },
           dataBatismo: data.data_batismo ? { toDate: () => new Date(data.data_batismo + "T12:00:00") } : undefined,
           unidadeId: data.unidade_id,
-          coordenadas: data.latitude && data.longitude ? { lat: data.latitude, lng: data.longitude } : undefined,
+          coordenadas: data.latitude && data.longitude ? { lat: data.latitude, lng: data.longitude } : { lat: 0, lng: 0 },
           endereco: {
             logradouro: data.logradouro || "",
             numero: data.numero || "",
@@ -62,7 +62,8 @@ export default function EditarMembroPage() {
             cidade: data.cidade || "",
             estado: data.estado || "",
             cep: data.cep || "",
-          }
+          },
+          criadoPor: data.criado_por || "",
         };
 
         setMembro(m);
