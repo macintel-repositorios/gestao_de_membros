@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { query, onSnapshot, getDoc, getDocs } from "firebase/firestore";
-import { getMembrosCollection, getIgrejaDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { GoogleMap } from "@/components/mapa/google-map";
 import { Button } from "@/components/ui/button";
@@ -55,10 +54,33 @@ export default function MapaPage() {
 
     const loadIgreja = async () => {
       try {
-        const igrejaDocRef = getIgrejaDoc(igrejaId);
-        const igrejaDocSnap = await getDoc(igrejaDocRef);
-        if (igrejaDocSnap.exists()) {
-          setIgreja({ id: igrejaDocSnap.id, ...igrejaDocSnap.data() } as Igreja);
+        const { data: igrejaData, error } = await supabase
+          .from("igrejas")
+          .select("*")
+          .eq("id", igrejaId)
+          .single();
+        if (error) throw error;
+        if (igrejaData) {
+          setIgreja({
+            id: igrejaData.id,
+            nome: igrejaData.nome,
+            convencao: igrejaData.convencao || "",
+            ministerio: igrejaData.ministerio || "",
+            dirigente: igrejaData.dirigente || "",
+            telefone: igrejaData.telefone || "",
+            email: igrejaData.email || "",
+            cnpj: igrejaData.cnpj || "",
+            fotoUrl: igrejaData.foto_url || "",
+            endereco: {
+              logradouro: igrejaData.logradouro || "",
+              numero: igrejaData.numero || "",
+              complemento: igrejaData.complemento || "",
+              bairro: igrejaData.bairro || "",
+              cidade: igrejaData.cidade || "",
+              estado: igrejaData.estado || "",
+              cep: igrejaData.cep || "",
+            },
+          } as any);
         }
       } catch (error) {
         console.error("Erro ao carregar dados da igreja:", error);
@@ -77,17 +99,43 @@ export default function MapaPage() {
 
     const loadMembros = async () => {
       try {
-        const membrosData: Membro[] = [];
+        const { data: membrosData, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis);
         
-        for (const unidadeId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, unidadeId);
-          const snapshot = await getDocs(query(membrosRef));
-          snapshot.forEach((docSnap) => {
-            membrosData.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as Membro);
-          });
-        }
+        if (error) throw error;
+
+        const mapeados = (membrosData || []).map((m) => ({
+          id: m.id,
+          unidadeId: m.unidade_id,
+          nome: m.nome,
+          telefone: m.telefone || "",
+          email: m.email || "",
+          fotoUrl: m.foto_url || "",
+          dataNascimento: m.data_nascimento || "",
+          estadoCivil: m.estado_civil || "",
+          dataBatismo: m.data_batismo || "",
+          cargo: m.cargo || "",
+          tipo: m.tipo as TipoMembro,
+          sexo: m.sexo || "",
+          endereco: {
+            logradouro: m.logradouro || "",
+            numero: m.numero || "",
+            complemento: m.complemento || "",
+            bairro: m.bairro || "",
+            cidade: m.cidade || "",
+            estado: m.estado || "",
+            cep: m.cep || "",
+          },
+          coordenadas: {
+            lat: m.latitude ? Number(m.latitude) : -23.55052,
+            lng: m.longitude ? Number(m.longitude) : -46.633308,
+          },
+        }));
         
-        setMembros(membrosData);
+        setMembros(mapeados as any);
       } catch (error) {
         console.error("Erro ao carregar membros:", error);
       } finally {
@@ -163,7 +211,7 @@ export default function MapaPage() {
             )}
           </Button>
           <Button asChild>
-            <Link href="/dashboard/grupos/novo">
+            <Link href="/grupos/novo">
               <UsersRound className="mr-2 h-4 w-4" />
               Criar Grupo
             </Link>
@@ -352,7 +400,7 @@ export default function MapaPage() {
                     </a>
                   </Button>
                   <Button className="w-full" asChild>
-                    <Link href={`/dashboard/membros/${selectedMembro.id}`}>
+                    <Link href={`/membros/${selectedMembro.id}`}>
                       <User className="mr-2 h-4 w-4" />
                       Ver Perfil Completo
                       <ExternalLink className="ml-2 h-3 w-3" />

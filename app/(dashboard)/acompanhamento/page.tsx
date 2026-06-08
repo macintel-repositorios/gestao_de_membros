@@ -13,10 +13,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { db } from "@/lib/firebase";
-import { COLLECTIONS } from "@/lib/firestore";
-import { deleteDoc, doc, query, orderBy, getDocs, limit } from "firebase/firestore";
-import { getAcompanhamentosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -99,21 +96,59 @@ export default function AcompanhamentoPage() {
     }
     setLoading(true);
     try {
-      const data: Acompanhamento[] = [];
-      
-      for (const unidadeId of unidadesAcessiveis) {
-        const acompRef = getAcompanhamentosCollection(igrejaId, unidadeId);
-        const q = query(acompRef, orderBy("data", "desc"), limit(50));
-        const snapshot = await getDocs(q);
-        snapshot.forEach((docSnap) => {
-          data.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
-        });
+      const { data: acompData, error: acompError } = await supabase
+        .from("acompanhamentos")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesAcessiveis)
+        .order("data", { ascending: false })
+        .limit(50);
+
+      if (acompError) throw acompError;
+
+      const { data: membrosData } = await supabase
+        .from("membros")
+        .select("id, nome, foto_url")
+        .eq("igreja_id", igrejaId);
+
+      const { data: usuariosData } = await supabase
+        .from("usuarios")
+        .select("id, nome")
+        .eq("igreja_id", igrejaId);
+
+      const membrosMap = new Map<string, { nome: string; fotoUrl: string }>();
+      if (membrosData) {
+        membrosData.forEach((m) => membrosMap.set(m.id, { nome: m.nome, fotoUrl: m.foto_url || "" }));
       }
-      
-      // Sort by date descending
-      data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
-      
-      setAcompanhamentos(data);
+
+      const usersMap = new Map<string, string>();
+      if (usuariosData) {
+        usuariosData.forEach((u) => usersMap.set(u.id, u.nome));
+      }
+
+      const list: Acompanhamento[] = (acompData || []).map((row) => {
+        const membro = membrosMap.get(row.membro_id);
+        const responsavelNome = row.responsavel_uid ? (usersMap.get(row.responsavel_uid) || membrosMap.get(row.responsavel_uid)?.nome || "Não encontrado") : "N/A";
+        
+        return {
+          id: row.id,
+          membroId: row.membro_id,
+          membroNome: membro?.nome || "Membro não encontrado",
+          membroFotoUrl: membro?.fotoUrl || "",
+          tipo: row.tipo as TipoAcompanhamento,
+          data: row.data ? { toDate: () => new Date(row.data) } : { toDate: () => new Date() },
+          responsavelUid: row.responsavel_uid || "",
+          responsavelNome: responsavelNome,
+          descricao: row.descricao,
+          dadosHospital: row.dados_hospital || undefined,
+          proximoContato: row.proximo_contato ? { toDate: () => new Date(row.proximo_contato) } : undefined,
+          observacoes: row.observacoes || "",
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
+          unidadeId: row.unidade_id,
+        };
+      });
+
+      setAcompanhamentos(list);
     } catch (error) {
       console.error("Erro ao carregar acompanhamentos:", error);
     } finally {
@@ -129,7 +164,12 @@ export default function AcompanhamentoPage() {
     if (!acomp || !igrejaId) return;
 
     try {
-      await deleteDoc(doc(db!, COLLECTIONS.IGREJAS, igrejaId, COLLECTIONS.UNIDADES, acomp.unidadeId, COLLECTIONS.ACOMPANHAMENTOS, acomp.id));
+      const { error } = await supabase
+        .from("acompanhamentos")
+        .delete()
+        .eq("id", acomp.id);
+
+      if (error) throw error;
       toast.success("Acompanhamento excluído com sucesso");
       setAcompanhamentos((prev) => prev.filter((item) => item.id !== acomp.id));
       setAcompParaVisualizar(null);

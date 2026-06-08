@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { query, getDocs } from "firebase/firestore";
-import { getMembrosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui
 import { ChevronLeft, ChevronRight, Cake, Phone, Gift, Eye } from "lucide-react";
 import { format, isSameDay, isSameMonth, getDaysInMonth, setDate } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Membro, TIPOS_MEMBRO, CORES_TIPO } from "@/lib/types";
+import { Membro, TIPOS_MEMBRO, CORES_TIPO, TipoMembro, CargoMembro } from "@/lib/types";
 
 export default function AniversariantesPage() {
   const { igrejaId, unidadesAcessiveis } = useAuth();
@@ -32,18 +31,42 @@ export default function AniversariantesPage() {
 
     const loadMembros = async () => {
       try {
-        const membrosData: Membro[] = [];
-        
-        for (const unidadeId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, unidadeId);
-          const snapshot = await getDocs(query(membrosRef));
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data.dataNascimento) {
-              membrosData.push({ id: docSnap.id, unidadeId, ...data } as Membro);
-            }
-          });
-        }
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .eq("situacao", "ativo");
+
+        if (error) throw error;
+
+        const membrosData: Membro[] = (data || [])
+          .filter((row) => row.data_nascimento)
+          .map((row) => ({
+            id: row.id,
+            nome: row.nome,
+            telefone: row.telefone || "",
+            email: row.email || "",
+            fotoUrl: row.foto_url || "",
+            ativo: row.ativo ?? (row.situacao === "ativo"),
+            tipo: row.tipo as TipoMembro,
+            cargo: row.cargo as CargoMembro,
+            cargoDescricao: row.cargo_descricao || "",
+            unidadeId: row.unidade_id,
+            dataNascimento: { toDate: () => new Date(row.data_nascimento + "T12:00:00") },
+            dataCadastro: row.data_cadastro ? { toDate: () => new Date(row.data_cadastro) } : undefined,
+            dataBatismo: row.data_batismo ? { toDate: () => new Date(row.data_batismo + "T12:00:00") } : undefined,
+            endereco: {
+              logradouro: row.logradouro || "",
+              numero: row.numero || "",
+              complemento: row.complemento || "",
+              bairro: row.bairro || "",
+              cidade: row.cidade || "",
+              estado: row.estado || "",
+              cep: row.cep || "",
+            },
+            coordenadas: row.latitude && row.longitude ? { lat: row.latitude, lng: row.longitude } : undefined,
+          } as unknown as Membro));
         
         setMembros(membrosData);
       } catch (error) {

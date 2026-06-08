@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { query, onSnapshot, getDocs } from "firebase/firestore";
-import { getMembrosCollection, getAcompanhamentosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,18 +67,49 @@ export default function RelatoriosPage() {
 
     const loadData = async () => {
       try {
-        // Load acompanhamentos from all accessible units
-        const acompData: Acompanhamento[] = [];
-        for (const unidadeId of unidadesAcessiveis) {
-          const acompRef = getAcompanhamentosCollection(igrejaId, unidadeId);
-          const snapshot = await getDocs(query(acompRef));
-          snapshot.forEach((docSnap) => {
-            acompData.push({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
-          });
-        }
+        const { data: acompRows, error: acompErr } = await supabase
+          .from("acompanhamentos")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .order("data", { ascending: false });
+
+        if (acompErr) throw acompErr;
+
+        const { data: usuariosData } = await supabase
+          .from("usuarios")
+          .select("id, nome")
+          .eq("igreja_id", igrejaId);
+
+        const { data: membrosData } = await supabase
+          .from("membros")
+          .select("id, nome, tipo, unidade_id")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .eq("situacao", "ativo");
+
+        const usersMap = new Map<string, string>();
+        if (usuariosData) usuariosData.forEach((u) => usersMap.set(u.id, u.nome));
+        if (membrosData) membrosData.forEach((m) => usersMap.set(m.id, m.nome));
+
+        const acompData: Acompanhamento[] = (acompRows || []).map((row) => ({
+          id: row.id,
+          membroId: row.membro_id,
+          membroNome: usersMap.get(row.membro_id) || "Membro",
+          membroFotoUrl: "",
+          tipo: row.tipo as TipoAcompanhamento,
+          data: row.data ? { toDate: () => new Date(row.data) } : { toDate: () => new Date() },
+          responsavelUid: row.responsavel_uid || "",
+          responsavelNome: usersMap.get(row.responsavel_uid || "") || "Não encontrado",
+          descricao: row.descricao,
+          dadosHospital: row.dados_hospital || undefined,
+          proximoContato: row.proximo_contato ? { toDate: () => new Date(row.proximo_contato) } : undefined,
+          observacoes: row.observacoes || "",
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
+          unidadeId: row.unidade_id,
+        }));
         setAcompanhamentos(acompData);
 
-        // Load members stats from all accessible units
         const porTipo: Record<TipoMembro, number> = {
           visitante: 0,
           congregado: 0,
@@ -89,14 +119,11 @@ export default function RelatoriosPage() {
         };
         let totalMembros = 0;
 
-        for (const unidadeId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, unidadeId);
-          const snapshot = await getDocs(query(membrosRef));
-          totalMembros += snapshot.size;
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data.tipo in porTipo) {
-              porTipo[data.tipo as TipoMembro]++;
+        if (membrosData) {
+          membrosData.forEach((m) => {
+            totalMembros++;
+            if (m.tipo in porTipo) {
+              porTipo[m.tipo as TipoMembro]++;
             }
           });
         }

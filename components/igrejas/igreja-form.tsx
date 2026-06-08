@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getDoc, setDoc, doc, getDocs, Timestamp, collection, query, where, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getIgrejasCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { useAuth } from "@/contexts/auth-context";
 import { Igreja, TipoIgreja, TIPOS_IGREJA, Endereco } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -64,6 +63,9 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [adminNome, setAdminNome] = useState("");
   const [adminTelefone, setAdminTelefone] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminSenha, setAdminSenha] = useState("");
+  const [adminConfirmaSenha, setAdminConfirmaSenha] = useState("");
   const [originalAdmin, setOriginalAdmin] = useState<{ id: string; nome: string; telefone: string, igrejaId?: string, unidadeId?: string, ativo?: boolean, dataCriacao?: any, criadoPor?: string | null } | null>(null);
 
   useEffect(() => {
@@ -74,73 +76,76 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
   }, [igrejaId, unidadeId, parentIgrejaId]);
 
   const loadIgreja = async () => {
-    if (!db) return;
-    
     try {
       setLoading(true);
-      let docSnap;
+      let data;
       if (unidadeId && parentIgrejaId) {
-        docSnap = await getDoc(doc(db, "igrejas", parentIgrejaId, "unidades", unidadeId));
+        const { data: uData, error } = await supabase
+          .from("unidades")
+          .select("*")
+          .eq("id", unidadeId)
+          .single();
+        if (error) throw error;
+        data = uData;
       } else if (igrejaId) {
-        docSnap = await getDoc(doc(db, "igrejas", igrejaId));
+        const { data: iData, error } = await supabase
+          .from("igrejas")
+          .select("*")
+          .eq("id", igrejaId)
+          .single();
+        if (error) throw error;
+        data = iData;
       } else {
         setLoading(false);
         return;
       }
       
-      if (docSnap.exists()) {
-        const data = { id: docSnap.id, ...docSnap.data() } as Igreja;
+      if (data) {
         setNome(data.nome || "");
         setTipo(data.tipo || "sede");
-        setCodIgreja(data.codIgreja || "");
+        setCodIgreja(data.cod_igreja || "");
         setConvencao(data.convencao || "");
         setMinisterio(data.ministerio || "");
-        setIgrejaPaiId(data.igrejaPaiId || "");
+        setIgrejaPaiId(data.igreja_pai_id || "");
         setDirigente(data.dirigente || "");
         setTelefone(formatTelefone(data.telefone || ""));
         setEmail(data.email || "");
         setCnpj(formatCnpj(data.cnpj || ""));
 
         // Endereço
-        setCep(formatCep(data.endereco?.cep || ""));
-        setLogradouro(data.endereco?.logradouro || "");
-        setNumero(data.endereco?.numero || "");
-        setComplemento(data.endereco?.complemento || "");
-        setBairro(data.endereco?.bairro || "");
-        setCidade(data.endereco?.cidade || "");
-        setEstado(data.endereco?.estado || "");
-        setFotoBase64(data.fotoUrl || null);
+        setCep(formatCep(data.cep || ""));
+        setLogradouro(data.logradouro || "");
+        setNumero(data.numero || "");
+        setComplemento(data.complemento || "");
+        setBairro(data.bairro || "");
+        setCidade(data.cidade || "");
+        setEstado(data.estado || "");
+        setFotoBase64(data.foto_url || null);
 
         // Carregar o administrador
         try {
-          const usuariosRef = collection(db, "usuarios");
-          let q;
-          if (unidadeId) {
-            // Se for unidade (congregação/subcongregação)
-            q = query(usuariosRef, where("unidadeId", "==", unidadeId), where("nivelAcesso", "==", "admin"));
-          } else if (igrejaId) {
-            // Se for a igreja principal (Sede)
-            q = query(usuariosRef, where("igrejaId", "==", igrejaId), where("nivelAcesso", "==", "admin"));
-          }
+          const { data: adminData, error: adminError } = await supabase
+            .from("usuarios")
+            .select("*")
+            .eq(unidadeId ? "unidade_id" : "igreja_id", unidadeId || igrejaId)
+            .eq("nivel_acesso", "admin")
+            .limit(1)
+            .maybeSingle();
           
-          if (q) {
-            const userSnap = await getDocs(q);
-            if (!userSnap.empty) {
-              const adminDoc = userSnap.docs[0];
-              const adminData = adminDoc.data();
-              setOriginalAdmin({
-                id: adminDoc.id,
-                nome: adminData.nome || "",
-                telefone: adminData.telefone || "",
-                igrejaId: adminData.igrejaId,
-                unidadeId: adminData.unidadeId,
-                ativo: adminData.ativo,
-                dataCriacao: adminData.dataCriacao,
-                criadoPor: adminData.criadoPor,
-              });
-              setAdminNome(adminData.nome || "");
-              setAdminTelefone(formatTelefone(adminData.telefone || ""));
-            }
+          if (adminError) throw adminError;
+
+          if (adminData) {
+            setOriginalAdmin({
+              id: adminData.id,
+              nome: adminData.nome || "",
+              telefone: adminData.telefone || "",
+              igrejaId: adminData.igreja_id,
+              unidadeId: adminData.unidade_id,
+              ativo: adminData.ativo,
+              dataCriacao: adminData.data_criacao,
+            });
+            setAdminNome(adminData.nome || "");
+            setAdminTelefone(formatTelefone(adminData.telefone || ""));
           }
         } catch (err) {
           console.error("Erro ao carregar administrador:", err);
@@ -156,11 +161,13 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
 
   const loadIgrejasExistentes = async () => {
     try {
-      const snapshot = await getDocs(getIgrejasCollection());
-      const data = snapshot.docs
-        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }) as Igreja)
-        .filter(i => i.id !== igrejaId);
-      setIgrejasExistentes(data);
+      const { data, error } = await supabase
+        .from("igrejas")
+        .select("*")
+        .eq("ativa", true);
+      
+      if (error) throw error;
+      setIgrejasExistentes((data || []).filter(i => i.id !== igrejaId));
     } catch (error) {
       console.error("Erro ao carregar igrejas:", error);
     }
@@ -216,250 +223,227 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!nome.trim() || !db) {
+    if (!nome.trim()) {
       toast.error("O nome da igreja é obrigatório.");
       return;
     }
 
-    if (!adminNome.trim() || !adminTelefone.trim()) {
-      toast.error("O nome e telefone do administrador são obrigatórios.");
-      return;
-    }
-    const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-    if (adminPhoneDigits.length < 10) {
-      toast.error("Telefone do administrador inválido.");
-      return;
+    if (!(igrejaId || unidadeId)) {
+      if (!adminNome.trim() || !adminTelefone.trim()) {
+        toast.error("O nome e telefone do administrador são obrigatórios.");
+        return;
+      }
+      const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
+      if (adminPhoneDigits.length < 10) {
+        toast.error("Telefone do administrador inválido.");
+        return;
+      }
+      if (!adminEmail.trim()) {
+        toast.error("O e-mail do administrador é obrigatório.");
+        return;
+      }
+      if (!adminSenha.trim()) {
+        toast.error("A senha do administrador é obrigatória.");
+        return;
+      }
+      if (adminSenha.length < 6) {
+        toast.error("A senha deve ter pelo menos 6 caracteres.");
+        return;
+      }
+      if (adminSenha !== adminConfirmaSenha) {
+        toast.error("As senhas não coincidem.");
+        return;
+      }
+    } else {
+      if (adminNome.trim() || adminTelefone.trim()) {
+        if (!adminNome.trim() || !adminTelefone.trim()) {
+          toast.error("Preencha ambos os campos (nome e telefone) do administrador.");
+          return;
+        }
+        const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
+        if (adminPhoneDigits.length < 10) {
+          toast.error("Telefone do administrador inválido.");
+          return;
+        }
+      }
     }
 
     setSaving(true);
     try {
       const cleanNewPhone = adminTelefone.replace(/\D/g, "");
 
-      const endereco: Endereco = {
-        cep: cep.replace(/\D/g, ""),
-        logradouro,
-        numero,
-        complemento,
-        bairro,
-        cidade,
-        estado,
-      };
-
-      const targetId = igrejaId || unidadeId || doc(collection(db!, "igrejas")).id;
-      let docRef;
-      if (unidadeId && parentIgrejaId) {
-        docRef = doc(db!, "igrejas", parentIgrejaId, "unidades", unidadeId);
-      } else {
-        docRef = doc(db!, "igrejas", targetId);
-      }
-
       const dataToSave = {
         nome: nome.trim(),
-        tipo,
-        codIgreja: codIgreja.trim() || null,
         convencao: convencao.trim() || null,
         ministerio: ministerio.trim() || null,
-        igrejaPaiId: igrejaPaiId || null,
         dirigente: dirigente.trim() || null,
         telefone: telefone.replace(/\D/g, "") || null,
         email: email.trim().toLowerCase() || null,
         cnpj: cnpj.replace(/\D/g, "") || null,
-        fotoUrl: fotoBase64 || null,
-        endereco,
+        foto_url: fotoBase64 || null,
+        cep: cep.replace(/\D/g, "") || null,
+        logradouro: logradouro.trim() || null,
+        numero: numero.trim() || null,
+        complemento: complemento.trim() || null,
+        bairro: bairro.trim() || null,
+        cidade: cidade.trim() || null,
+        estado: estado.trim() || null,
         ativa: true,
-        atualizadoPor: usuario?.uid || null,
-        dataAtualizacao: Timestamp.now(),
-      } as any;
+      };
 
-      if (!igrejaId && !unidadeId) {
-        dataToSave.dataCadastro = Timestamp.now();
-      }
+      let targetId = igrejaId;
 
-      await setDoc(docRef, dataToSave, { merge: true });
-
-      if (!igrejaId && !unidadeId) {
-        // 1. Cria a unidade Sede para esta nova igreja
-        const unidadesCollectionRef = collection(db!, "igrejas", targetId, "unidades");
-        const novaUnidadeSedeRef = await addDoc(unidadesCollectionRef, {
-          nome: "Sede - " + nome.trim(),
-          tipo: "sede",
-          dataCriacao: Timestamp.now(),
-          ativa: true,
-          dirigente: dirigente.trim() || null,
-          telefone: telefone.replace(/\D/g, "") || null,
-          endereco: logradouro ? {
-            logradouro,
-            numero,
-            complemento,
-            bairro,
-            cidade,
-            estado,
-            cep: cep.replace(/\D/g, "")
-          } : null
-        });
-        const newUnidadeId = novaUnidadeSedeRef.id;
-
-        // 2. Cria a Regional 1 correspondente
-        const regCollectionRef = collection(db!, "igrejas", targetId, "regionais_setores");
-        const regDocRef = await addDoc(regCollectionRef, {
-          tipo: "regional",
-          numero: 1,
-          nome: "Regional 1",
-          hospedeiraId: newUnidadeId,
-          dirigente: dirigente.trim() || null,
-          igrejasMembrosIds: [],
-          dataCriacao: Timestamp.now(),
-        });
-        const newRegId = regDocRef.id;
-
-        // Vincula a regional/setor de volta à Sede
-        const sedeRef = doc(db!, "igrejas", targetId, "unidades", newUnidadeId);
-        await updateDoc(sedeRef, {
-          ehHospedeira: true,
-          hospedaRegionalId: newRegId,
-          regionalSetorId: newRegId,
-        });
-
-        // 3. Cria ou vincula o usuário administrador
-        const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-        const adminUserId = `+55${adminPhoneDigits}`;
-
-        // Verifica se já existe um usuário com esse telefone no banco
-        const usuariosRef = collection(db!, "usuarios");
-        const q = query(usuariosRef, where("telefone", "==", adminTelefone));
-        const snapshot = await getDocs(q);
-
-        if (!snapshot.empty) {
-          // Atualiza usuário existente para ser o admin da nova igreja
-          const existingUserDoc = snapshot.docs[0];
-          const userRef = doc(db!, "usuarios", existingUserDoc.id);
-          await updateDoc(userRef, {
-            nome: adminNome.trim(),
-            nivelAcesso: "admin",
-            igrejaId: targetId,
-            unidadeId: newUnidadeId,
-            ativo: true,
-            dataAtualizacao: Timestamp.now()
-          });
-        } else {
-          // Cria novo pré-cadastro
-          const userRef = doc(db!, "usuarios", adminUserId);
-          await setDoc(userRef, {
-            telefone: adminTelefone,
-            nome: adminNome.trim(),
-            nivelAcesso: "admin",
-            igrejaId: targetId,
-            unidadeId: newUnidadeId,
-            ativo: true,
-            dataCriacao: Timestamp.now(),
-            criadoPor: usuario?.uid || null,
-          });
-        }
+      if (unidadeId && parentIgrejaId) {
+        const { error } = await supabase
+          .from("unidades")
+          .update({
+            nome: nome.trim(),
+            dirigente: dirigente.trim() || null,
+            telefone: telefone.replace(/\D/g, "") || null,
+            cep: cep.replace(/\D/g, "") || null,
+            logradouro: logradouro.trim() || null,
+            numero: numero.trim() || null,
+            complemento: complemento.trim() || null,
+            bairro: bairro.trim() || null,
+            cidade: cidade.trim() || null,
+            estado: estado.trim() || null,
+            foto_url: fotoBase64 || null,
+          })
+          .eq("id", unidadeId);
+        
+        if (error) throw error;
       } else {
-        // Edit flow for admin user
-        if (originalAdmin) {
-          const cleanNewPhone = adminTelefone.replace(/\D/g, "");
-          const cleanOldPhone = originalAdmin.telefone.replace(/\D/g, "");
-          
-          if (cleanNewPhone === cleanOldPhone) {
-            // Apenas atualiza o nome do administrador existente
-            const userRef = doc(db!, "usuarios", originalAdmin.id);
-            await updateDoc(userRef, {
-              nome: adminNome.trim(),
-              dataAtualizacao: Timestamp.now(),
-            });
-          } else {
-            // O telefone mudou: verifica se o novo telefone já existe no banco
-            const usuariosRef = collection(db!, "usuarios");
-            const q = query(usuariosRef, where("telefone", "==", adminTelefone));
-            const snapshot = await getDocs(q);
+        if (igrejaId) {
+          const { error } = await supabase
+            .from("igrejas")
+            .update(dataToSave)
+            .eq("id", igrejaId);
+          if (error) throw error;
 
-            if (!snapshot.empty) {
-              // Se já existe um usuário com esse novo número, atualiza ele e remove o antigo
-              const existingUserDoc = snapshot.docs[0];
-              const userRef = doc(db!, "usuarios", existingUserDoc.id);
-              await updateDoc(userRef, {
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: originalAdmin.igrejaId || igrejaId || parentIgrejaId || targetId,
-                unidadeId: originalAdmin.unidadeId || unidadeId || null,
-                ativo: true,
-                dataAtualizacao: Timestamp.now()
-              });
-
-              // Deleta o registro antigo originalAdmin
-              const oldAdminDocRef = doc(db!, "usuarios", originalAdmin.id);
-              await deleteDoc(oldAdminDocRef);
-            } else {
-              // Se não existe, cria o novo documento pré-cadastrado e remove o originalAdmin antigo
-              const cleanNewPhoneWithPrefix = `+55${cleanNewPhone}`;
-              const newAdminDocRef = doc(db!, "usuarios", cleanNewPhoneWithPrefix);
-              
-              await setDoc(newAdminDocRef, {
-                telefone: adminTelefone,
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: originalAdmin.igrejaId || igrejaId || parentIgrejaId || targetId,
-                unidadeId: originalAdmin.unidadeId || unidadeId || null,
-                ativo: originalAdmin.ativo !== undefined ? originalAdmin.ativo : true,
-                dataCriacao: originalAdmin.dataCriacao || Timestamp.now(),
-                criadoPor: originalAdmin.criadoPor || usuario?.uid || null,
-                dataAtualizacao: Timestamp.now(),
-              });
-
-              const oldAdminDocRef = doc(db!, "usuarios", originalAdmin.id);
-              await deleteDoc(oldAdminDocRef);
-            }
-          }
+          // Sincroniza o nome e detalhes com a unidade do tipo 'sede' correspondente
+          await supabase
+            .from("unidades")
+            .update({
+              nome: nome.trim(),
+              dirigente: dirigente.trim() || null,
+              telefone: telefone.replace(/\D/g, "") || null,
+              cep: cep.replace(/\D/g, "") || null,
+              logradouro: logradouro.trim() || null,
+              numero: numero.trim() || null,
+              complemento: complemento.trim() || null,
+              bairro: bairro.trim() || null,
+              cidade: cidade.trim() || null,
+              estado: estado.trim() || null,
+              foto_url: fotoBase64 || null,
+            })
+            .eq("igreja_id", igrejaId)
+            .eq("tipo", "sede");
         } else {
-          // Se não havia administrador cadastrado anteriormente, mas o usuário digitou agora
-          if (adminNome.trim() && adminTelefone.trim()) {
-            const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-            const adminUserId = `+55${adminPhoneDigits}`;
-            
-            // Verifica se o telefone já existe no banco
-            const usuariosRef = collection(db!, "usuarios");
-            const q = query(usuariosRef, where("telefone", "==", adminTelefone));
-            const snapshot = await getDocs(q);
-            
-            let finalUnidadeId = unidadeId || null;
-            if (!finalUnidadeId && igrejaId) {
-              const unitsRef = collection(db!, "igrejas", igrejaId, "unidades");
-              const qSub = query(unitsRef, where("tipo", "==", "sede"));
-              const qSnap = await getDocs(qSub);
-              if (!qSnap.empty) {
-                finalUnidadeId = qSnap.docs[0].id;
+          const { data: newIgreja, error } = await supabase
+            .from("igrejas")
+            .insert(dataToSave)
+            .select()
+            .single();
+          if (error) throw error;
+          targetId = newIgreja.id;
+
+          // 1. Cria a unidade Sede para esta nova igreja
+          const { data: newUnidade, error: uError } = await supabase
+            .from("unidades")
+            .insert({
+              igreja_id: targetId,
+              nome: "Sede - " + nome.trim(),
+              tipo: "sede",
+              dirigente: dirigente.trim() || null,
+              telefone: telefone.replace(/\D/g, "") || null,
+              cep: cep.replace(/\D/g, "") || null,
+              logradouro: logradouro.trim() || null,
+              numero: numero.trim() || null,
+              complemento: complemento.trim() || null,
+              bairro: bairro.trim() || null,
+              cidade: cidade.trim() || null,
+              estado: estado.trim() || null,
+              ativa: true,
+            })
+            .select()
+            .single();
+          if (uError) throw uError;
+
+          // 2. Cria a Regional 1 correspondente
+          const { data: newReg, error: regError } = await supabase
+            .from("regionais_setores")
+            .insert({
+              igreja_id: targetId,
+              tipo: "regional",
+              numero: 1,
+              nome: "Regional 1",
+              hospedeira_id: newUnidade.id,
+              dirigente: dirigente.trim() || null,
+            })
+            .select()
+            .single();
+          if (regError) throw regError;
+
+          // Vincula a regional/setor de volta à Sede
+          const { error: updError } = await supabase
+            .from("unidades")
+            .update({
+              eh_hospedeira: true,
+              regional_setor_id: newReg.id,
+            })
+            .eq("id", newUnidade.id);
+          if (updError) throw updError;
+
+          // 3. Cria o usuário administrador no Supabase Auth usando cliente temporário
+          const tempSupabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+              auth: { persistSession: false }
+            }
+          );
+
+          const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+            email: adminEmail.trim().toLowerCase(),
+            password: adminSenha,
+            options: {
+              data: {
+                nome: adminNome.trim()
               }
             }
+          });
 
-            if (!snapshot.empty) {
-              // Atualiza o existente
-              const existingUserDoc = snapshot.docs[0];
-              const userRef = doc(db!, "usuarios", existingUserDoc.id);
-              await updateDoc(userRef, {
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: igrejaId || parentIgrejaId || targetId,
-                unidadeId: finalUnidadeId,
-                ativo: true,
-                dataAtualizacao: Timestamp.now()
-              });
-            } else {
-              // Cria novo pré-cadastro
-              const newAdminDocRef = doc(db!, "usuarios", adminUserId);
-              await setDoc(newAdminDocRef, {
-                telefone: adminTelefone,
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: igrejaId || parentIgrejaId || targetId,
-                unidadeId: finalUnidadeId,
-                ativo: true,
-                dataCriacao: Timestamp.now(),
-                criadoPor: usuario?.uid || null,
-              });
-            }
-          }
+          if (authError) throw authError;
+          const newAuthUser = authData.user;
+          if (!newAuthUser) throw new Error("Erro ao criar credenciais de acesso");
+
+          const { error: userError } = await supabase
+            .from("usuarios")
+            .insert({
+              id: newAuthUser.id,
+              nome: adminNome.trim(),
+              telefone: adminTelefone.replace(/\D/g, ""),
+              email: adminEmail.trim().toLowerCase(),
+              nivel_acesso: "admin",
+              igreja_id: targetId,
+              unidade_id: newUnidade.id,
+              ativo: true,
+            });
+          if (userError) throw userError;
         }
+      }
+
+      // Se for edição, atualiza os dados do administrador existente
+      if (originalAdmin) {
+        const { error: updateAdminError } = await supabase
+          .from("usuarios")
+          .update({
+            nome: adminNome.trim(),
+            telefone: adminTelefone.replace(/\D/g, ""),
+          })
+          .eq("id", originalAdmin.id);
+        
+        if (updateAdminError) throw updateAdminError;
       }
 
       toast.success(igrejaId || unidadeId ? "Igreja atualizada com sucesso!" : "Igreja criada com sucesso!");
@@ -816,7 +800,7 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
                   <CardTitle className="text-base">Administrador do Sistema</CardTitle>
                   <CardDescription>Dados do usuário administrativo da igreja</CardDescription>
                   {activeSection !== "admin" && adminNome && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Admin: <span className="font-semibold text-primary">{adminNome}</span> ({adminTelefone})
                     </p>
                   )}
@@ -849,6 +833,46 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
                   />
                 </div>
               </div>
+
+              {!(igrejaId || unidadeId) && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="adminEmail">E-mail de Acesso *</Label>
+                    <Input
+                      id="adminEmail"
+                      type="email"
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      placeholder="admin@igreja.com"
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="adminSenha">Senha *</Label>
+                      <Input
+                        id="adminSenha"
+                        type="password"
+                        value={adminSenha}
+                        onChange={(e) => setAdminSenha(e.target.value)}
+                        placeholder="••••••••"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="adminConfirmaSenha">Confirmar Senha *</Label>
+                      <Input
+                        id="adminConfirmaSenha"
+                        type="password"
+                        value={adminConfirmaSenha}
+                        onChange={(e) => setAdminConfirmaSenha(e.target.value)}
+                        placeholder="••••••••"
+                        required
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </CollapsibleContent>
         </Card>

@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { getDoc } from "firebase/firestore";
-import { getFamiliaDoc, getMembroDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -58,86 +57,80 @@ export default function FamiliaDetalhesPage() {
       
       setLoading(true);
       try {
-        // Tentar carregar da unidade especificada ou buscar em todas
-        const unidadesToTry = unidadeIdParam 
-          ? [unidadeIdParam] 
-          : unidadesAcessiveis;
-        
-        let familiaData: FamiliaComUnidade | null = null;
-        let foundUnidadeId = "";
-        
-        for (const unidadeId of unidadesToTry) {
-          try {
-            const docRef = getFamiliaDoc(igrejaId, unidadeId, familiaId);
-            const docSnap = await getDoc(docRef);
-            
-            if (docSnap.exists()) {
-              familiaData = {
-                id: docSnap.id,
-                ...docSnap.data(),
-                unidadeId,
-              } as FamiliaComUnidade;
-              foundUnidadeId = unidadeId;
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
-        
-        if (!familiaData) {
+        const { data: data, error } = await supabase
+          .from("familias")
+          .select("*")
+          .eq("id", familiaId)
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .single();
+
+        if (error || !data) {
           toast.error("Família não encontrada");
           router.push("/familias");
           return;
         }
-        
-        setFamilia(familiaData);
+
+        const familiaData: FamiliaComUnidade = {
+          id: data.id,
+          nome: data.nome,
+          responsavel1Id: data.responsavel_1_id,
+          responsavel1Nome: "",
+          responsavel2Id: data.responsavel_2_id || undefined,
+          responsavel2Nome: "",
+          dependentes: (data.dependentes || []).map((dep: any) => ({
+            ...dep,
+            dataNascimento: dep.dataNascimento ? { toDate: () => new Date(dep.dataNascimento) } : undefined,
+          })),
+          observacoes: data.observacoes || "",
+          unidadeId: data.unidade_id,
+          dataCriacao: data.data_criacao ? { toDate: () => new Date(data.data_criacao) } : { toDate: () => new Date() },
+          dataAtualizacao: data.data_atualizacao ? { toDate: () => new Date(data.data_atualizacao) } : undefined,
+          criadoPor: data.criado_por || "",
+          ativo: data.ativo,
+        };
         
         // Carregar dados do responsável 1
         if (familiaData.responsavel1Id) {
-          for (const unidadeId of unidadesAcessiveis) {
-            try {
-              const membroRef = getMembroDoc(igrejaId, unidadeId, familiaData.responsavel1Id);
-              const membroSnap = await getDoc(membroRef);
-              if (membroSnap.exists()) {
-                const data = membroSnap.data();
-                setResponsavel1({
-                  id: membroSnap.id,
-                  nome: data.nome,
-                  telefone: data.telefone,
-                  fotoUrl: data.fotoUrl,
-                  unidadeId,
-                });
-                break;
-              }
-            } catch {
-              continue;
-            }
+          const { data: m1, error: e1 } = await supabase
+            .from("membros")
+            .select("id, nome, telefone, foto_url, unidade_id")
+            .eq("id", familiaData.responsavel1Id)
+            .single();
+
+          if (m1 && !e1) {
+            setResponsavel1({
+              id: m1.id,
+              nome: m1.nome,
+              telefone: m1.telefone || "",
+              fotoUrl: m1.foto_url || "",
+              unidadeId: m1.unidade_id,
+            });
+            familiaData.responsavel1Nome = m1.nome;
           }
         }
         
         // Carregar dados do responsável 2
         if (familiaData.responsavel2Id) {
-          for (const unidadeId of unidadesAcessiveis) {
-            try {
-              const membroRef = getMembroDoc(igrejaId, unidadeId, familiaData.responsavel2Id);
-              const membroSnap = await getDoc(membroRef);
-              if (membroSnap.exists()) {
-                const data = membroSnap.data();
-                setResponsavel2({
-                  id: membroSnap.id,
-                  nome: data.nome,
-                  telefone: data.telefone,
-                  fotoUrl: data.fotoUrl,
-                  unidadeId,
-                });
-                break;
-              }
-            } catch {
-              continue;
-            }
+          const { data: m2, error: e2 } = await supabase
+            .from("membros")
+            .select("id, nome, telefone, foto_url, unidade_id")
+            .eq("id", familiaData.responsavel2Id)
+            .single();
+
+          if (m2 && !e2) {
+            setResponsavel2({
+              id: m2.id,
+              nome: m2.nome,
+              telefone: m2.telefone || "",
+              fotoUrl: m2.foto_url || "",
+              unidadeId: m2.unidade_id,
+            });
+            familiaData.responsavel2Nome = m2.nome;
           }
         }
+
+        setFamilia(familiaData);
       } catch (error) {
         console.error("Erro ao carregar família:", error);
         toast.error("Erro ao carregar dados da família");

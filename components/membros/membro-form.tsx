@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { addDoc, updateDoc, Timestamp, getDocs } from "firebase/firestore";
-import { getMembrosCollection, getMembroDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -212,22 +211,26 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
       
       setLoadingMembros(true);
       try {
-        const membrosRef = getMembrosCollection(igrejaId, selectedUnidadeId);
-        const membrosSnap = await getDocs(membrosRef);
+        const { data, error } = await supabase
+          .from("membros")
+          .select("id, nome, telefone, sexo")
+          .eq("igreja_id", igrejaId)
+          .eq("unidade_id", selectedUnidadeId)
+          .eq("situacao", "ativo");
+          
+        if (error) throw error;
         
-        const lista: Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[] = [];
-        membrosSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          // Exclui o próprio membro se estiver editando
-          if (data.ativo !== false && (!membro || docSnap.id !== membro.id)) {
-            lista.push({
-              id: docSnap.id,
-              nome: data.nome || "",
-              telefone: data.telefone || "",
-              sexo: data.sexo || "",
-            });
-          }
-        });
+        let lista = (data || []).map(row => ({
+          id: row.id,
+          nome: row.nome,
+          telefone: row.telefone || "",
+          sexo: row.sexo || "",
+        }));
+        
+        // Exclui o próprio membro se estiver editando
+        if (membro) {
+          lista = lista.filter(m => m.id !== membro.id);
+        }
         
         // Ordena por nome
         lista.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -386,45 +389,41 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
         }
       }
 
-      const membroData = {
+      const dataNascimentoVal = data.dataNascimento ? format(data.dataNascimento, "yyyy-MM-dd") : null;
+
+      const membroPayload = {
         nome: data.nome,
         telefone: data.telefone.replace(/\D/g, ""),
         email: data.email || null,
-        sexo: (data.sexo as Sexo) || null,
-        fotoUrl: fotoBase64 || null,
-        dataNascimento: data.dataNascimento ? (() => {
-          // Cria uma data ao meio-dia para evitar problemas de fuso horário
-          const d = data.dataNascimento;
-          const dateAtNoon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
-          return Timestamp.fromDate(dateAtNoon);
-        })() : null,
-        tipo: data.tipo as TipoMembro,
-        cargo: showCargo ? (data.cargo as CargoMembro) : null,
-        cargoDescricao: data.cargo === "outro" ? data.cargoDescricao : null,
-        // Estado civil e cônjuge
-        estadoCivil: (data.estadoCivil as EstadoCivil) || "solteiro",
-        nomeConjuge: nomeConjugeFinal,
-        conjugeId: conjugeIdFinal,
-        // Funções e departamentos
-        temFuncaoIgreja: data.temFuncaoIgreja || false,
-        funcoes: data.temFuncaoIgreja ? (data.funcoes as FuncaoIgreja[]) : null,
-        funcaoDescricao: data.funcoes?.includes("outro") ? data.funcaoDescricao : null,
-        departamentos: data.temFuncaoIgreja ? (data.departamentos as Departamento[]) : null,
-        departamentoDescricao: data.departamentos?.includes("outro") ? data.departamentoDescricao : null,
-        ehLider: data.ehLider || false,
-        liderDe: data.ehLider ? data.liderDe : null,
-        endereco: {
-          logradouro: data.logradouro,
-          numero: data.numero,
-          complemento: data.complemento || null,
-          bairro: data.bairro,
-          cidade: data.cidade,
-          estado: data.estado,
-          cep: data.cep.replace(/\D/g, ""),
-        },
-        coordenadas: coordenadas || null,
+        sexo: data.sexo || null,
+        foto_url: fotoBase64 || null,
+        data_nascimento: dataNascimentoVal,
+        tipo: data.tipo,
+        cargo: showCargo ? data.cargo : null,
+        cargo_descricao: data.cargo === "outro" ? data.cargoDescricao : null,
+        estado_civil: data.estadoCivil || "solteiro",
+        nome_conjuge: nomeConjugeFinal,
+        conjuge_id: conjugeIdFinal,
+        tem_funcao_igreja: data.temFuncaoIgreja || false,
+        funcoes: data.temFuncaoIgreja ? data.funcoes : null,
+        funcao_descricao: data.funcoes?.includes("outro") ? data.funcaoDescricao : null,
+        departamentos: data.temFuncaoIgreja ? data.departamentos : null,
+        departamento_descricao: data.departamentos?.includes("outro") ? data.departamentoDescricao : null,
+        eh_lider: data.ehLider || false,
+        lider_de: data.ehLider ? data.liderDe : null,
+        logradouro: data.logradouro,
+        numero: data.numero,
+        complemento: data.complemento || null,
+        bairro: data.bairro,
+        cidade: data.cidade,
+        estado: data.estado,
+        cep: data.cep.replace(/\D/g, ""),
+        latitude: coordenadas?.lat || null,
+        longitude: coordenadas?.lng || null,
         observacoes: data.observacoes || null,
-        ativo: true,
+        situacao: "ativo",
+        igreja_id: igrejaId,
+        unidade_id: selectedUnidadeId,
       };
       
       // Aviso se não tiver coordenadas
@@ -432,17 +431,24 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
         toast.info("Membro será salvo sem localização no mapa. Você pode adicionar depois.");
       }
 
-      if (membro && unidadeIdParam) {
+      if (membro) {
         // Update existing member
-        const membroRef = getMembroDoc(igrejaId, unidadeIdParam, membro.id);
+        const { error } = await supabase
+          .from("membros")
+          .update(membroPayload)
+          .eq("id", membro.id);
+        
+        if (error) throw error;
         
         // Se selecionou um cônjuge existente, atualiza o registro do cônjuge para vincular
         if (temConjugeAtual && data.conjugeEhMembro && data.conjugeIdSelecionado) {
-          const conjugeExistenteRef = getMembroDoc(igrejaId, unidadeIdParam, data.conjugeIdSelecionado);
-          await updateDoc(conjugeExistenteRef, {
-            conjugeId: membro.id,
-            nomeConjuge: data.nome.trim(),
-          });
+          await supabase
+            .from("membros")
+            .update({
+              conjuge_id: membro.id,
+              nome_conjuge: data.nome.trim(),
+            })
+            .eq("id", data.conjugeIdSelecionado);
         }
         
         // Se for para cadastrar um novo cônjuge (não está na lista)
@@ -450,76 +456,87 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
           const tipoConjugeFinal = (data.tipoConjuge || "membro") as TipoMembro;
           const showCargoConjugeFinal = tipoConjugeFinal === "obreiro" || tipoConjugeFinal === "lider";
           
-          const conjugeData = {
+          const conjugePayload = {
             nome: data.nomeConjuge.trim(),
             telefone: data.telefoneConjuge.replace(/\D/g, ""),
             email: data.emailConjuge || null,
-            sexo: (data.sexoConjuge as Sexo) || null,
-            fotoUrl: null,
-            dataNascimento: data.dataNascimentoConjuge ? (() => {
-              const d = data.dataNascimentoConjuge;
-              const dateAtNoon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
-              return Timestamp.fromDate(dateAtNoon);
-            })() : null,
+            sexo: data.sexoConjuge || null,
+            foto_url: null,
+            data_nascimento: data.dataNascimentoConjuge ? format(data.dataNascimentoConjuge, "yyyy-MM-dd") : null,
             tipo: tipoConjugeFinal,
-            cargo: showCargoConjugeFinal ? (data.cargoConjuge as CargoMembro) : null,
-            cargoDescricao: null,
-            estadoCivil: data.estadoCivil as EstadoCivil,
-            nomeConjuge: data.nome.trim(),
-            conjugeId: membro.id,
-            temFuncaoIgreja: false,
+            cargo: showCargoConjugeFinal ? data.cargoConjuge : null,
+            cargo_descricao: null,
+            estado_civil: data.estadoCivil,
+            nome_conjuge: data.nome.trim(),
+            conjuge_id: membro.id,
+            tem_funcao_igreja: false,
             funcoes: null,
-            funcaoDescricao: null,
+            funcao_descricao: null,
             departamentos: null,
-            departamentoDescricao: null,
-            ehLider: false,
-            liderDe: null,
-            endereco: {
-              logradouro: data.logradouro,
-              numero: data.numero,
-              complemento: data.complemento || null,
-              bairro: data.bairro,
-              cidade: data.cidade,
-              estado: data.estado,
-              cep: data.cep.replace(/\D/g, ""),
-            },
-            coordenadas: coordenadas || null,
+            departamento_descricao: null,
+            eh_lider: false,
+            lider_de: null,
+            logradouro: data.logradouro,
+            numero: data.numero,
+            complemento: data.complemento || null,
+            bairro: data.bairro,
+            cidade: data.cidade,
+            estado: data.estado,
+            cep: data.cep.replace(/\D/g, ""),
+            latitude: coordenadas?.lat || null,
+            longitude: coordenadas?.lng || null,
             observacoes: null,
             ativo: true,
-            unidadeId: unidadeIdParam,
-            dataCadastro: Timestamp.now(),
-            criadoPor: user.uid,
+            unidade_id: selectedUnidadeId,
+            igreja_id: igrejaId,
+            data_cadastro: format(new Date(), "yyyy-MM-dd"),
           };
           
           // Cadastra o cônjuge
-          const novoConjugeRef = await addDoc(getMembrosCollection(igrejaId, unidadeIdParam), conjugeData);
+          const { data: newConj, error: newConjErr } = await supabase
+            .from("membros")
+            .insert(conjugePayload)
+            .select("id")
+            .single();
+            
+          if (newConjErr) throw newConjErr;
           
           // Atualiza o membroData com o ID do novo cônjuge
-          membroData.conjugeId = novoConjugeRef.id;
-          membroData.nomeConjuge = data.nomeConjuge.trim();
-          
-          await updateDoc(membroRef, membroData);
+          await supabase
+            .from("membros")
+            .update({
+              conjuge_id: newConj.id,
+              nome_conjuge: data.nomeConjuge.trim()
+            })
+            .eq("id", membro.id);
+            
           toast.success("Membro atualizado e cônjuge cadastrado com sucesso!");
         } else {
-          await updateDoc(membroRef, membroData);
           toast.success("Membro atualizado com sucesso!");
         }
       } else {
         // Create new member na unidade selecionada
-        const membroPrincipalRef = await addDoc(getMembrosCollection(igrejaId, selectedUnidadeId), {
-          ...membroData,
-          unidadeId: selectedUnidadeId,
-          dataCadastro: Timestamp.now(),
-          criadoPor: user.uid,
-        });
+        const { data: newMemb, error: newMembErr } = await supabase
+          .from("membros")
+          .insert({
+            ...membroPayload,
+            data_cadastro: format(new Date(), "yyyy-MM-dd"),
+          })
+          .select("id")
+          .single();
+          
+        if (newMembErr) throw newMembErr;
+        const newMembId = newMemb.id;
         
         // Se selecionou um cônjuge existente, atualiza o registro do cônjuge para vincular
         if (temConjugeAtual && data.conjugeEhMembro && data.conjugeIdSelecionado) {
-          const conjugeRef = getMembroDoc(igrejaId, selectedUnidadeId, data.conjugeIdSelecionado);
-          await updateDoc(conjugeRef, {
-            conjugeId: membroPrincipalRef.id,
-            nomeConjuge: data.nome.trim(),
-          });
+          await supabase
+            .from("membros")
+            .update({
+              conjuge_id: newMembId,
+              nome_conjuge: data.nome.trim(),
+            })
+            .eq("id", data.conjugeIdSelecionado);
         }
         
         // Se for para cadastrar um novo cônjuge (não está na lista)
@@ -527,53 +544,56 @@ export function MembroForm({ membro, unidadeIdParam, onSuccess }: MembroFormProp
           const tipoConjugeFinalNovo = (data.tipoConjuge || "membro") as TipoMembro;
           const showCargoConjugeFinalNovo = tipoConjugeFinalNovo === "obreiro" || tipoConjugeFinalNovo === "lider";
           
-          const conjugeData = {
+          const conjugePayload = {
             nome: data.nomeConjuge.trim(),
             telefone: data.telefoneConjuge.replace(/\D/g, ""),
             email: data.emailConjuge || null,
-            sexo: (data.sexoConjuge as Sexo) || null,
-            fotoUrl: null,
-            dataNascimento: data.dataNascimentoConjuge ? (() => {
-              const d = data.dataNascimentoConjuge;
-              const dateAtNoon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
-              return Timestamp.fromDate(dateAtNoon);
-            })() : null,
+            sexo: data.sexoConjuge || null,
+            foto_url: null,
+            data_nascimento: data.dataNascimentoConjuge ? format(data.dataNascimentoConjuge, "yyyy-MM-dd") : null,
             tipo: tipoConjugeFinalNovo,
-            cargo: showCargoConjugeFinalNovo ? (data.cargoConjuge as CargoMembro) : null,
-            cargoDescricao: null,
-            estadoCivil: data.estadoCivil as EstadoCivil,
-            nomeConjuge: data.nome.trim(), // O nome do membro principal é o cônjuge do cônjuge
-            conjugeId: membroPrincipalRef.id, // Vincula ao membro principal
-            temFuncaoIgreja: false,
+            cargo: showCargoConjugeFinalNovo ? data.cargoConjuge : null,
+            cargo_descricao: null,
+            estado_civil: data.estadoCivil,
+            nome_conjuge: data.nome.trim(), // O nome do membro principal é o cônjuge do cônjuge
+            conjuge_id: newMembId, // Vincula ao membro principal
+            tem_funcao_igreja: false,
             funcoes: null,
-            funcaoDescricao: null,
+            funcao_descricao: null,
             departamentos: null,
-            departamentoDescricao: null,
-            ehLider: false,
-            liderDe: null,
-            endereco: {
-              logradouro: data.logradouro,
-              numero: data.numero,
-              complemento: data.complemento || null,
-              bairro: data.bairro,
-              cidade: data.cidade,
-              estado: data.estado,
-              cep: data.cep.replace(/\D/g, ""),
-            },
-            coordenadas: coordenadas || null,
+            departamento_descricao: null,
+            eh_lider: false,
+            lider_de: null,
+            logradouro: data.logradouro,
+            numero: data.numero,
+            complemento: data.complemento || null,
+            bairro: data.bairro,
+            cidade: data.cidade,
+            estado: data.estado,
+            cep: data.cep.replace(/\D/g, ""),
+            latitude: coordenadas?.lat || null,
+            longitude: coordenadas?.lng || null,
             observacoes: null,
             ativo: true,
-            unidadeId: selectedUnidadeId,
-            dataCadastro: Timestamp.now(),
-            criadoPor: user.uid,
+            unidade_id: selectedUnidadeId,
+            igreja_id: igrejaId,
+            data_cadastro: format(new Date(), "yyyy-MM-dd"),
           };
           
           // Cadastra o cônjuge
-          const conjugeRef = await addDoc(getMembrosCollection(igrejaId, selectedUnidadeId), conjugeData);
+          const { data: newConj, error: newConjErr } = await supabase
+            .from("membros")
+            .insert(conjugePayload)
+            .select("id")
+            .single();
+            
+          if (newConjErr) throw newConjErr;
           
           // Atualiza o membro principal com o ID do cônjuge
-          const membroRef = getMembroDoc(igrejaId, selectedUnidadeId, membroPrincipalRef.id);
-          await updateDoc(membroRef, { conjugeId: conjugeRef.id });
+          await supabase
+            .from("membros")
+            .update({ conjuge_id: newConj.id })
+            .eq("id", newMembId);
           
           toast.success("Membro e cônjuge cadastrados com sucesso!");
         } else {

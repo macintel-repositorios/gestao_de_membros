@@ -19,6 +19,7 @@ const CORES_TIPO_UNIDADE: Record<TipoUnidade, string> = {
   sede: "#16a34a",
   congregacao: "#2563eb",
   subcongregacao: "#9333ea",
+  ponto_evangelistico: "#f97316",
 };
 
 export function UnidadeSelector() {
@@ -32,6 +33,7 @@ export function UnidadeSelector() {
   const sedes = unidadesDisponiveis.filter(u => u.tipo === "sede");
   const congregacoes = unidadesDisponiveis.filter(u => u.tipo === "congregacao");
   const subcongregacoes = unidadesDisponiveis.filter(u => u.tipo === "subcongregacao");
+  const pontosEvangelisticos = unidadesDisponiveis.filter(u => u.tipo === "ponto_evangelistico");
 
   const handleSelectUnidade = (unidade: Unidade) => {
     setUnidadeSelecionada(unidade);
@@ -160,6 +162,32 @@ export function UnidadeSelector() {
                 className="gap-2 pl-4"
               >
                 <Building2 className="h-4 w-4" style={{ color: CORES_TIPO_UNIDADE.subcongregacao }} />
+                <span className="truncate">{unidade.nome}</span>
+                {unidadeSelecionada?.id === unidade.id && !visualizandoTodas && (
+                  <Check className="ml-auto h-4 w-4" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
+
+        {/* Pontos Evangelísticos */}
+        {pontosEvangelisticos.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: CORES_TIPO_UNIDADE.ponto_evangelistico }} />
+                Pontos Evangelísticos
+              </div>
+            </DropdownMenuLabel>
+            {pontosEvangelisticos.map((unidade) => (
+              <DropdownMenuItem 
+                key={unidade.id} 
+                onClick={() => handleSelectUnidade(unidade)}
+                className="gap-2 pl-4"
+              >
+                <Building2 className="h-4 w-4" style={{ color: CORES_TIPO_UNIDADE.ponto_evangelistico }} />
                 <span className="truncate">{unidade.nome}</span>
                 {unidadeSelecionada?.id === unidade.id && !visualizandoTodas && (
                   <Check className="ml-auto h-4 w-4" />

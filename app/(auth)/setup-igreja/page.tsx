@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { doc, setDoc, collection, addDoc, Timestamp, getDocs, query, where, updateDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +44,7 @@ interface UnidadeExistente {
 
 export default function SetupIgrejaPage() {
   const router = useRouter();
-  const { user, loading: authLoading, igrejaId, signOut } = useAuth();
+  const { user, loading: authLoading, igrejaId } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [loadingDados, setLoadingDados] = useState(true);
@@ -70,7 +69,12 @@ export default function SetupIgrejaPage() {
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
+  
+  // Administrador do sistema
   const [adminNome, setAdminNome] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminSenha, setAdminSenha] = useState("");
+  const [adminConfirmarSenha, setAdminConfirmarSenha] = useState("");
   const [adminTelefone, setAdminTelefone] = useState("");
   
   // Hierarquia - Igrejas (Sedes) existentes
@@ -97,36 +101,29 @@ export default function SetupIgrejaPage() {
   // Convenção da sede (para exibição)
   const [convencaoSede, setConvencaoSede] = useState("");
 
-  // Redireciona se já tem igreja
+  // Redireciona se já tem igreja configurada
   useEffect(() => {
-    if (!authLoading && igrejaId) {
+    if (!authLoading && user && igrejaId) {
       router.push("/");
     }
-  }, [authLoading, igrejaId, router]);
-
-  // Redireciona se não está logado
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/login");
-    }
-  }, [user, authLoading, router]);
+  }, [authLoading, user, igrejaId, router]);
 
   // Carrega igrejas existentes (sedes)
   useEffect(() => {
     async function carregarIgrejas() {
       try {
-        const igrejasRef = collection(db, "igrejas");
-        const snapshot = await getDocs(igrejasRef);
+        const { data, error } = await supabase
+          .from("igrejas")
+          .select("id, nome, convencao")
+          .eq("ativa", true);
+
+        if (error) throw error;
         
-        const igrejas: IgrejaExistente[] = [];
-        snapshot.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          igrejas.push({
-            id: docSnap.id,
-            nome: data.nome || "Sem nome",
-            convencao: data.convencao,
-          });
-        });
+        const igrejas: IgrejaExistente[] = (data || []).map(row => ({
+          id: row.id,
+          nome: row.nome || "Sem nome",
+          convencao: row.convencao,
+        }));
         
         setIgrejasExistentes(igrejas);
       } catch (err) {
@@ -136,13 +133,10 @@ export default function SetupIgrejaPage() {
       }
     }
     
-    if (user) {
-      carregarIgrejas();
-    }
-  }, [user]);
+    carregarIgrejas();
+  }, []);
 
   // Carrega unidades da igreja selecionada
-  // Não carrega se a sede foi criada inline (já temos os dados)
   useEffect(() => {
     async function carregarUnidades() {
       if (!igrejaIdSelecionada) {
@@ -150,33 +144,30 @@ export default function SetupIgrejaPage() {
         return;
       }
       
-      // Se a sede foi criada inline, não precisamos buscar do Firestore
-      // Os dados já foram adicionados ao estado em handleCriarSede
       if (sedeCriada && sedeCriada.id === igrejaIdSelecionada) {
-        // Busca convenção da igreja (já está no sedeCriada)
         setConvencaoSede(sedeCriada.convencao || "");
         return;
       }
       
       try {
-        const unidadesRef = collection(db, "igrejas", igrejaIdSelecionada, "unidades");
-        const snapshot = await getDocs(unidadesRef);
+        const { data, error } = await supabase
+          .from("unidades")
+          .select("id, igreja_id, nome, tipo, unidade_pai_id")
+          .eq("igreja_id", igrejaIdSelecionada)
+          .eq("ativa", true);
+
+        if (error) throw error;
         
-        const unidades: UnidadeExistente[] = [];
-        snapshot.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          unidades.push({
-            id: docSnap.id,
-            igrejaId: igrejaIdSelecionada,
-            nome: data.nome || "Sem nome",
-            tipo: data.tipo || "sede",
-            unidadePaiId: data.unidadePaiId,
-          });
-        });
+        const unidades: UnidadeExistente[] = (data || []).map(row => ({
+          id: row.id,
+          igrejaId: row.igreja_id,
+          nome: row.nome || "Sem nome",
+          tipo: row.tipo as TipoUnidade,
+          unidadePaiId: row.unidade_pai_id,
+        }));
         
         setUnidadesExistentes(unidades);
         
-        // Busca convenção da igreja
         const igreja = igrejasExistentes.find(i => i.id === igrejaIdSelecionada);
         setConvencaoSede(igreja?.convencao || "");
       } catch (err) {
@@ -187,7 +178,6 @@ export default function SetupIgrejaPage() {
     carregarUnidades();
   }, [igrejaIdSelecionada, igrejasExistentes, sedeCriada]);
 
-  // Filtra congregações da igreja selecionada
   const congregacoesDaIgreja = unidadesExistentes.filter(u => u.tipo === "congregacao");
 
   const buscarCep = async () => {
@@ -231,55 +221,51 @@ export default function SetupIgrejaPage() {
     
     setLoading(true);
     try {
-      // Cria documento da igreja (sede) na coleção igrejas
-      const igrejaData: Record<string, unknown> = {
-        nome: novaSedeNome.trim(),
-        convencao: novaSedeConvencao.trim(),
-        dataCadastro: Timestamp.now(),
-        ativa: true,
-      };
+      const { data: novaIgreja, error: igrejaError } = await supabase
+        .from("igrejas")
+        .insert({
+          nome: novaSedeNome.trim(),
+          convencao: novaSedeConvencao.trim(),
+          dirigente: novaSedeDirigente.trim() || null,
+          ativa: true,
+        })
+        .select()
+        .single();
+
+      if (igrejaError) throw igrejaError;
+
+      const { data: novaUnidade, error: unidadeError } = await supabase
+        .from("unidades")
+        .insert({
+          igreja_id: novaIgreja.id,
+          nome: novaSedeNome.trim(),
+          tipo: "sede",
+          ativa: true,
+          dirigente: novaSedeDirigente.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (unidadeError) throw unidadeError;
       
-      if (novaSedeDirigente.trim()) {
-        igrejaData.dirigente = novaSedeDirigente.trim();
-      }
-      
-      const igrejasRef = collection(db, "igrejas");
-      const novaIgrejaRef = await addDoc(igrejasRef, igrejaData);
-      
-      // Cria a unidade sede dentro da subcoleção unidades
-      const unidadesRef = collection(db, "igrejas", novaIgrejaRef.id, "unidades");
-      const novaUnidadeSedeRef = await addDoc(unidadesRef, {
-        nome: novaSedeNome.trim(),
-        tipo: "sede",
-        dataCriacao: Timestamp.now(),
-        ativa: true,
-        dirigente: novaSedeDirigente.trim() || null,
-      });
-      
-      const novaSedeId = novaIgrejaRef.id;
+      const novaSedeId = novaIgreja.id;
       const nomeSedeNovo = novaSedeNome.trim();
       const convencaoNova = novaSedeConvencao.trim();
       
-      // Atualiza estados de forma síncrona para evitar race conditions
-      // Primeiro fecha o form
       setMostrarFormSede(false);
-      
-      // Atualiza lista de igrejas existentes
       setIgrejasExistentes(prev => [...prev, {
         id: novaSedeId,
         nome: nomeSedeNovo,
         convencao: convencaoNova,
       }]);
       
-      // Atualiza lista de unidades com a sede recém-criada
       setUnidadesExistentes([{
-        id: novaUnidadeSedeRef.id,
+        id: novaUnidade.id,
         igrejaId: novaSedeId,
         nome: nomeSedeNovo,
         tipo: "sede",
       }]);
       
-      // Atualiza a sede criada e seleção
       setSedeCriada({
         id: novaSedeId,
         nome: nomeSedeNovo,
@@ -288,7 +274,6 @@ export default function SetupIgrejaPage() {
       setIgrejaIdSelecionada(novaSedeId);
       setConvencaoSede(convencaoNova);
       
-      // Limpa os campos do form
       setNovaSedeNome("");
       setNovaSedeConvencao("");
       setNovaSedeDirigente("");
@@ -315,28 +300,29 @@ export default function SetupIgrejaPage() {
       return;
     }
     
-    // Encontra a unidade sede para vincular
     const unidadeSede = unidadesExistentes.find(u => u.tipo === "sede");
     
     setLoading(true);
     try {
-      const unidadesRef = collection(db, "igrejas", igrejaIdParaCriar, "unidades");
-      const novaCongregacaoRef = await addDoc(unidadesRef, {
-        nome: novaCongregacaoNome.trim(),
-        tipo: "congregacao",
-        unidadePaiId: unidadeSede?.id || null,
-        dataCriacao: Timestamp.now(),
-        ativa: true,
-        dirigente: novaCongregacaoDirigente.trim() || null,
-      });
+      const { data: novaCong, error: errorCong } = await supabase
+        .from("unidades")
+        .insert({
+          igreja_id: igrejaIdParaCriar,
+          nome: novaCongregacaoNome.trim(),
+          tipo: "congregacao",
+          unidade_pai_id: unidadeSede?.id || null,
+          ativa: true,
+          dirigente: novaCongregacaoDirigente.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (errorCong) throw errorCong;
       
-      const novaCongId = novaCongregacaoRef.id;
+      const novaCongId = novaCong.id;
       const nomeCongNovo = novaCongregacaoNome.trim();
       
-      // Fecha o form primeiro
       setMostrarFormCongregacao(false);
-      
-      // Adiciona à lista de unidades existentes
       setUnidadesExistentes(prev => [...prev, {
         id: novaCongId,
         igrejaId: igrejaIdParaCriar,
@@ -345,14 +331,12 @@ export default function SetupIgrejaPage() {
         unidadePaiId: unidadeSede?.id,
       }]);
       
-      // Atualiza estado da congregação criada
       setCongregacaoCriada({
         id: novaCongId,
         nome: nomeCongNovo,
       });
       setCongregacaoIdSelecionada(novaCongId);
       
-      // Limpa os campos do form
       setNovaCongregacaoNome("");
       setNovaCongregacaoDirigente("");
       
@@ -372,20 +356,18 @@ export default function SetupIgrejaPage() {
       return;
     }
 
-    if (!adminNome.trim() || !adminTelefone.trim()) {
-      setError("Nome e telefone do administrador são obrigatórios");
+    if (!adminNome.trim() || !adminEmail.trim() || !adminSenha.trim()) {
+      setError("Nome, e-mail e senha do administrador são obrigatórios");
       return;
     }
 
-    const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-    if (adminPhoneDigits.length < 10) {
-      setError("Telefone do administrador inválido");
+    if (adminSenha.trim().length < 6) {
+      setError("A senha do administrador deve ter pelo menos 6 caracteres");
       return;
     }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      setError("Usuário não autenticado");
+    if (adminSenha.trim() !== adminConfirmarSenha.trim()) {
+      setError("As senhas digitadas não coincidem");
       return;
     }
 
@@ -398,70 +380,78 @@ export default function SetupIgrejaPage() {
 
       // ========== TIPO SEDE ==========
       if (tipo === "sede") {
-        // Cria documento da igreja (sede)
-        const igrejaData: Record<string, unknown> = {
-          nome: nome.trim(),
-          convencao: ministerio.trim() || nome.trim(), // Usa ministério como convenção ou nome
-          dataCadastro: Timestamp.now(),
-          ativa: true,
-        };
+        const { data: novaIgreja, error: errorIgreja } = await supabase
+          .from("igrejas")
+          .insert({
+            nome: nome.trim(),
+            convencao: ministerio.trim() || nome.trim(),
+            dirigente: dirigente.trim() || null,
+            ministerio: ministerio.trim() || null,
+            telefone: telefone.trim() || null,
+            email: email.trim() || null,
+            cnpj: cnpj.trim() || null,
+            cep: cep || null,
+            logradouro: logradouro.trim() || null,
+            numero: numero.trim() || null,
+            complemento: complemento.trim() || null,
+            bairro: bairro.trim() || null,
+            cidade: cidade.trim() || null,
+            estado: estado.trim() || null,
+            ativa: true,
+          })
+          .select()
+          .single();
+
+        if (errorIgreja) throw errorIgreja;
+        finalIgrejaId = novaIgreja.id;
         
-        if (dirigente.trim()) igrejaData.dirigente = dirigente.trim();
-        if (ministerio.trim()) igrejaData.ministerio = ministerio.trim();
-        if (telefone.trim()) igrejaData.telefone = telefone.trim();
-        if (email.trim()) igrejaData.email = email.trim();
-        if (cnpj.trim()) igrejaData.cnpj = cnpj.trim();
-        
-        // Endereço
-        const enderecoData: Record<string, string> = {};
-        if (cep) enderecoData.cep = cep;
-        if (logradouro.trim()) enderecoData.logradouro = logradouro.trim();
-        if (numero.trim()) enderecoData.numero = numero.trim();
-        if (complemento.trim()) enderecoData.complemento = complemento.trim();
-        if (bairro.trim()) enderecoData.bairro = bairro.trim();
-        if (cidade.trim()) enderecoData.cidade = cidade.trim();
-        if (estado.trim()) enderecoData.estado = estado.trim();
-        
-        if (Object.keys(enderecoData).length > 0) {
-          igrejaData.endereco = enderecoData;
-        }
-        
-        const igrejasRef = collection(db, "igrejas");
-        const novaIgrejaRef = await addDoc(igrejasRef, igrejaData);
-        finalIgrejaId = novaIgrejaRef.id;
-        
-        // Cria a unidade sede
-        const unidadesRef = collection(db, "igrejas", finalIgrejaId, "unidades");
-        const unidadeData: Record<string, unknown> = {
-          nome: nome.trim(),
-          tipo: "sede",
-          dataCriacao: Timestamp.now(),
-          ativa: true,
-        };
-        if (dirigente.trim()) unidadeData.dirigente = dirigente.trim();
-        if (Object.keys(enderecoData).length > 0) unidadeData.endereco = enderecoData;
-        
-        const novaUnidadeRef = await addDoc(unidadesRef, unidadeData);
-        finalUnidadeId = novaUnidadeRef.id;
+        const { data: novaUnidade, error: errorUnidade } = await supabase
+          .from("unidades")
+          .insert({
+            igreja_id: finalIgrejaId,
+            nome: nome.trim(),
+            tipo: "sede",
+            dirigente: dirigente.trim() || null,
+            telefone: telefone.trim() || null,
+            cep: cep || null,
+            logradouro: logradouro.trim() || null,
+            numero: numero.trim() || null,
+            complemento: complemento.trim() || null,
+            bairro: bairro.trim() || null,
+            cidade: cidade.trim() || null,
+            estado: estado.trim() || null,
+            ativa: true,
+          })
+          .select()
+          .single();
+
+        if (errorUnidade) throw errorUnidade;
+        finalUnidadeId = novaUnidade.id;
 
         // Cria a Regional 1 automaticamente hospedada na Sede
-        const regionaisRef = collection(db, "igrejas", finalIgrejaId, "regionais_setores");
-        const regionalDocRef = await addDoc(regionaisRef, {
-          tipo: "regional",
-          numero: 1,
-          nome: "Regional 1",
-          hospedeiraId: finalUnidadeId,
-          dirigente: dirigente.trim() || null,
-          igrejasMembrosIds: [finalUnidadeId],
-          dataCriacao: Timestamp.now()
-        });
+        const { data: novaRegional, error: errorRegional } = await supabase
+          .from("regionais_setores")
+          .insert({
+            igreja_id: finalIgrejaId,
+            tipo: "regional",
+            numero: 1,
+            nome: "Regional 1",
+            hospedeira_id: finalUnidadeId,
+            dirigente: dirigente.trim() || null,
+          })
+          .select()
+          .single();
 
-        // Atualiza a unidade Sede com as referências da regional
-        await updateDoc(doc(db, "igrejas", finalIgrejaId, "unidades", finalUnidadeId), {
-          ehHospedeira: true,
-          hospedaRegionalId: regionalDocRef.id,
-          regionalSetorId: regionalDocRef.id
-        });
+        if (errorRegional) throw errorRegional;
+
+        // Vincula a regional na unidade Sede
+        await supabase
+          .from("unidades")
+          .update({
+            eh_hospedeira: true,
+            regional_setor_id: novaRegional.id,
+          })
+          .eq("id", finalUnidadeId);
       }
       
       // ========== TIPO CONGREGAÇÃO ==========
@@ -474,37 +464,31 @@ export default function SetupIgrejaPage() {
           return;
         }
         
-        // Encontra a unidade sede para vincular
         const unidadeSede = unidadesExistentes.find(u => u.tipo === "sede");
         
-        // Cria a unidade congregação
-        const unidadesRef = collection(db, "igrejas", finalIgrejaId, "unidades");
-        const unidadeData: Record<string, unknown> = {
-          nome: nome.trim(),
-          tipo: "congregacao",
-          unidadePaiId: unidadeSede?.id || null,
-          dataCriacao: Timestamp.now(),
-          ativa: true,
-        };
-        if (dirigente.trim()) unidadeData.dirigente = dirigente.trim();
-        if (telefone.trim()) unidadeData.telefone = telefone.trim();
-        
-        // Endereço
-        const enderecoData: Record<string, string> = {};
-        if (cep) enderecoData.cep = cep;
-        if (logradouro.trim()) enderecoData.logradouro = logradouro.trim();
-        if (numero.trim()) enderecoData.numero = numero.trim();
-        if (complemento.trim()) enderecoData.complemento = complemento.trim();
-        if (bairro.trim()) enderecoData.bairro = bairro.trim();
-        if (cidade.trim()) enderecoData.cidade = cidade.trim();
-        if (estado.trim()) enderecoData.estado = estado.trim();
-        
-        if (Object.keys(enderecoData).length > 0) {
-          unidadeData.endereco = enderecoData;
-        }
-        
-        const novaUnidadeRef = await addDoc(unidadesRef, unidadeData);
-        finalUnidadeId = novaUnidadeRef.id;
+        const { data: novaUnidade, error: errorUnidade } = await supabase
+          .from("unidades")
+          .insert({
+            igreja_id: finalIgrejaId,
+            nome: nome.trim(),
+            tipo: "congregacao",
+            unidade_pai_id: unidadeSede?.id || null,
+            dirigente: dirigente.trim() || null,
+            telefone: telefone.trim() || null,
+            cep: cep || null,
+            logradouro: logradouro.trim() || null,
+            numero: numero.trim() || null,
+            complemento: complemento.trim() || null,
+            bairro: bairro.trim() || null,
+            cidade: cidade.trim() || null,
+            estado: estado.trim() || null,
+            ativa: true,
+          })
+          .select()
+          .single();
+
+        if (errorUnidade) throw errorUnidade;
+        finalUnidadeId = novaUnidade.id;
       }
       
       // ========== TIPO SUBCONGREGAÇÃO ==========
@@ -524,87 +508,70 @@ export default function SetupIgrejaPage() {
           return;
         }
         
-        // Cria a unidade subcongregação
-        const unidadesRef = collection(db, "igrejas", finalIgrejaId, "unidades");
-        const unidadeData: Record<string, unknown> = {
-          nome: nome.trim(),
-          tipo: "subcongregacao",
-          unidadePaiId: congregacaoVinculoId,
-          dataCriacao: Timestamp.now(),
-          ativa: true,
-        };
-        if (dirigente.trim()) unidadeData.dirigente = dirigente.trim();
-        if (telefone.trim()) unidadeData.telefone = telefone.trim();
-        
-        // Endereço
-        const enderecoData: Record<string, string> = {};
-        if (cep) enderecoData.cep = cep;
-        if (logradouro.trim()) enderecoData.logradouro = logradouro.trim();
-        if (numero.trim()) enderecoData.numero = numero.trim();
-        if (complemento.trim()) enderecoData.complemento = complemento.trim();
-        if (bairro.trim()) enderecoData.bairro = bairro.trim();
-        if (cidade.trim()) enderecoData.cidade = cidade.trim();
-        if (estado.trim()) enderecoData.estado = estado.trim();
-        
-        if (Object.keys(enderecoData).length > 0) {
-          unidadeData.endereco = enderecoData;
-        }
-        
-        const novaUnidadeRef = await addDoc(unidadesRef, unidadeData);
-        finalUnidadeId = novaUnidadeRef.id;
+        const { data: novaUnidade, error: errorUnidade } = await supabase
+          .from("unidades")
+          .insert({
+            igreja_id: finalIgrejaId,
+            nome: nome.trim(),
+            tipo: "subcongregacao",
+            unidade_pai_id: congregacaoVinculoId,
+            dirigente: dirigente.trim() || null,
+            telefone: telefone.trim() || null,
+            cep: cep || null,
+            logradouro: logradouro.trim() || null,
+            numero: numero.trim() || null,
+            complemento: complemento.trim() || null,
+            bairro: bairro.trim() || null,
+            cidade: cidade.trim() || null,
+            estado: estado.trim() || null,
+            ativa: true,
+          })
+          .select()
+          .single();
+
+        if (errorUnidade) throw errorUnidade;
+        finalUnidadeId = novaUnidade.id;
       }
 
-      // Atualiza o usuário com a igreja e unidade
-      const userRef = doc(db, "usuarios", currentUser.uid);
-      await setDoc(userRef, {
-        igrejaId: finalIgrejaId,
-        unidadeId: finalUnidadeId,
-        nivelAcesso: tipo === "sede" ? "full" : "admin",
-        dataAtualizacao: Timestamp.now(),
-      }, { merge: true });
-
-      // Cadastra o Administrador do Sistema se os campos forem preenchidos
-      if (adminNome.trim() && adminTelefone.trim()) {
-        const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-        if (adminPhoneDigits.length >= 10) {
-          const adminUserId = `+55${adminPhoneDigits}`;
-          
-          // Verifica se já existe um usuário com esse telefone no banco
-          const usuariosRef = collection(db, "usuarios");
-          const q = query(usuariosRef, where("telefone", "==", adminTelefone.trim()));
-          const snapshot = await getDocs(q);
-
-          if (!snapshot.empty) {
-            // Atualiza usuário existente
-            const existingUserDoc = snapshot.docs[0];
-            const userRef = doc(db, "usuarios", existingUserDoc.id);
-            await updateDoc(userRef, {
-              nome: adminNome.trim(),
-              nivelAcesso: "admin",
-              igrejaId: finalIgrejaId,
-              unidadeId: finalUnidadeId,
-              ativo: true,
-              dataAtualizacao: Timestamp.now()
-            });
-          } else {
-            // Cria novo pré-cadastro
-            const adminUserRef = doc(db, "usuarios", adminUserId);
-            await setDoc(adminUserRef, {
-              nome: adminNome.trim(),
-              telefone: adminTelefone.trim(),
-              nivelAcesso: "admin",
-              igrejaId: finalIgrejaId,
-              unidadeId: finalUnidadeId,
-              ativo: true,
-              dataCriacao: Timestamp.now(),
-              criadoPor: currentUser.uid,
-            });
+      // ========== CRIAR USUÁRIO ADMINISTRADOR NO SUPABASE AUTH ==========
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: adminEmail.trim(),
+        password: adminSenha.trim(),
+        options: {
+          data: {
+            nome: adminNome.trim(),
           }
         }
-      }
+      });
 
-      toast.success("Cadastro realizado com sucesso!");
-      window.location.href = "/";
+      if (authError) throw authError;
+
+      const authUser = authData.user;
+      if (!authUser) throw new Error("Erro ao criar credenciais do usuário.");
+
+      // Insere o registro na tabela de usuarios
+      const { error: userTableError } = await supabase
+        .from("usuarios")
+        .insert({
+          id: authUser.id,
+          nome: adminNome.trim(),
+          telefone: adminTelefone.trim() || null,
+          email: adminEmail.trim(),
+          nivel_acesso: "full",
+          igreja_id: finalIgrejaId,
+          unidade_id: finalUnidadeId,
+          ativo: true,
+        });
+
+      if (userTableError) throw userTableError;
+
+      if (authData.session) {
+        toast.success("Cadastro e login realizados com sucesso!");
+        window.location.href = "/";
+      } else {
+        toast.success("Cadastro realizado! Por favor, verifique o e-mail de confirmação enviado para " + adminEmail.trim() + " para ativar sua conta.");
+        window.location.href = "/login";
+      }
     } catch (err: unknown) {
       console.error("Erro ao cadastrar:", err);
       if (err instanceof Error) {
@@ -628,7 +595,7 @@ export default function SetupIgrejaPage() {
     setConvencaoSede("");
   }, [tipo]);
 
-  if (authLoading || loadingDados) {
+  if (loadingDados) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -641,11 +608,6 @@ export default function SetupIgrejaPage() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-start bg-gradient-to-b from-background to-muted/30 p-4 py-8">
-      <div className="absolute top-4 right-4">
-        <Button variant="outline" size="sm" onClick={() => signOut()}>
-          Sair / Voltar ao Login
-        </Button>
-      </div>
       <div className="mb-8 flex flex-col items-center">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
           <Church className="h-8 w-8" />
@@ -719,6 +681,11 @@ export default function SetupIgrejaPage() {
                           <SelectValue placeholder="Selecione uma sede existente" />
                         </SelectTrigger>
                         <SelectContent>
+                          {igrejasExistentes.length === 0 && (
+                            <SelectItem value="" disabled>
+                              Nenhuma sede cadastrada no momento
+                            </SelectItem>
+                          )}
                           {igrejasExistentes.map(igreja => (
                             <SelectItem key={igreja.id} value={igreja.id}>
                               {igreja.nome} {igreja.convencao && `(${igreja.convencao})`}
@@ -1058,9 +1025,9 @@ export default function SetupIgrejaPage() {
           <div className="border-t pt-6 space-y-4">
             <h3 className="text-lg font-semibold text-foreground">Administrador do Sistema</h3>
             <p className="text-sm text-muted-foreground">
-              Cadastre as informações de acesso para o administrador deste sistema (será adicionado à listagem de usuários)
+              Cadastre o administrador do sistema com seu e-mail e senha correspondentes.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <FieldGroup className="space-y-4">
               <Field>
                 <FieldLabel>Nome do Administrador *</FieldLabel>
                 <Input
@@ -1069,18 +1036,46 @@ export default function SetupIgrejaPage() {
                   onChange={(e) => setAdminNome(e.target.value)}
                 />
               </Field>
-              <Field>
-                <FieldLabel>Telefone do Administrador (WhatsApp/Login) *</FieldLabel>
-                <Input
-                  placeholder="(11) 99999-9999"
-                  value={adminTelefone}
-                  onChange={(e) => setAdminTelefone(e.target.value)}
-                />
-                <FieldDescription>
-                  Este número será usado pelo administrador para fazer login via SMS
-                </FieldDescription>
-              </Field>
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel>E-mail (Login) *</FieldLabel>
+                  <Input
+                    type="email"
+                    placeholder="admin@igreja.com"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>Telefone do Administrador</FieldLabel>
+                  <Input
+                    placeholder="(11) 99999-9999"
+                    value={adminTelefone}
+                    onChange={(e) => setAdminTelefone(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel>Senha de Acesso *</FieldLabel>
+                  <Input
+                    type="password"
+                    placeholder="Mínimo 6 caracteres"
+                    value={adminSenha}
+                    onChange={(e) => setAdminSenha(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>Confirmar Senha *</FieldLabel>
+                  <Input
+                    type="password"
+                    placeholder="Digite a senha novamente"
+                    value={adminConfirmarSenha}
+                    onChange={(e) => setAdminConfirmarSenha(e.target.value)}
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
           </div>
 
           {error && (

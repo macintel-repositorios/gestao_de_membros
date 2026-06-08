@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { addDoc, updateDoc, Timestamp } from "firebase/firestore";
-import { getVisitantesCollection, getVisitanteDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,7 +98,7 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
   const updateAcompanhante = (index: number, field: keyof Acompanhante, value: string) => {
     const updated = [...acompanhantes];
     if (field === "dataNascimento") {
-      updated[index][field] = value ? Timestamp.fromDate(new Date(value)) : undefined;
+      updated[index][field] = value ? { toDate: () => new Date(value + "T12:00:00") } as any : undefined;
     } else {
       updated[index][field] = value;
     }
@@ -133,45 +132,47 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
 
     setLoading(true);
     try {
-      const visitanteData: Record<string, unknown> = {
+      const payload: Record<string, any> = {
         nome: nome.trim(),
         telefone: telefone.replace(/\D/g, ""),
-        dataVisita: Timestamp.fromDate(new Date(dataVisita)),
-        primeiraVisita,
-        ativo: visitante ? (visitante.ativo ?? true) : true,
-        unidadeId,
+        data_visita: dataVisita,
+        primeira_visita: primeiraVisita,
+        unidade_id: unidadeId,
+        igreja_id: igrejaId,
+        data_nascimento: dataNascimento || null,
+        ja_recebeu_jesus: jaRecebeuJesus ?? false,
+        pertence_igreja: pertenceIgreja ?? false,
+        qual_igreja: qualIgreja.trim() || null,
+        convidado_por: convidadoPor.trim() || null,
+        pedido_oracao: pedidoOracao.trim() || null,
+        observacoes: observacoes.trim() || null,
+        acompanhantes: acompanhantes.map(a => ({
+          nome: a.nome.trim(),
+          telefone: a.telefone.replace(/\D/g, ""),
+          parentesco: a.parentesco || null,
+          dataNascimento: a.dataNascimento?.toDate ? a.dataNascimento.toDate().toISOString().split("T")[0] : (typeof a.dataNascimento === "string" ? a.dataNascimento : null)
+        })).filter(a => a.nome)
       };
-
-      if (dataNascimento) {
-        visitanteData.dataNascimento = Timestamp.fromDate(new Date(dataNascimento));
-      } else {
-        visitanteData.dataNascimento = null;
-      }
-      
-      visitanteData.jaRecebeuJesus = jaRecebeuJesus ?? null;
-      visitanteData.pertenceIgreja = pertenceIgreja ?? null;
-      visitanteData.qualIgreja = qualIgreja.trim() || null;
-      visitanteData.convidadoPor = convidadoPor.trim() || null;
-      visitanteData.pedidoOracao = pedidoOracao.trim() || null;
-      visitanteData.observacoes = observacoes.trim() || null;
-      visitanteData.acompanhantes = acompanhantes.filter(a => a.nome.trim()) || [];
 
       if (visitante) {
         // Atualizar
-        const visitanteRef = getVisitanteDoc(igrejaId, unidadeIdParam || visitante.unidadeId || unidadeId, visitante.id);
-        await updateDoc(visitanteRef, {
-          ...visitanteData,
-          dataAtualizacao: Timestamp.now(),
-        });
+        const { error } = await supabase
+          .from("visitantes")
+          .update(payload)
+          .eq("id", visitante.id);
+
+        if (error) throw error;
         toast.success("Visitante atualizado com sucesso!");
       } else {
         // Criar
-        const visitantesRef = getVisitantesCollection(igrejaId, unidadeId);
-        await addDoc(visitantesRef, {
-          ...visitanteData,
-          dataCriacao: Timestamp.now(),
-          criadoPor: user?.uid || null,
-        });
+        const { error } = await supabase
+          .from("visitantes")
+          .insert({
+            ...payload,
+            criado_por: user?.id || null,
+          });
+
+        if (error) throw error;
         toast.success("Visitante cadastrado com sucesso!");
       }
 

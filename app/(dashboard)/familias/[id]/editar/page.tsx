@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { getDoc } from "firebase/firestore";
-import { getFamiliaDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -40,35 +39,38 @@ export default function EditarFamiliaPage() {
       
       setLoading(true);
       try {
-        const unidadesToTry = unidadeIdParam 
-          ? [unidadeIdParam] 
-          : unidadesAcessiveis;
-        
-        let familiaData: FamiliaComUnidade | null = null;
-        
-        for (const unidadeId of unidadesToTry) {
-          try {
-            const docRef = getFamiliaDoc(igrejaId, unidadeId, familiaId);
-            const docSnap = await getDoc(docRef);
-            
-            if (docSnap.exists()) {
-              familiaData = {
-                id: docSnap.id,
-                ...docSnap.data(),
-                unidadeId,
-              } as FamiliaComUnidade;
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
-        
-        if (!familiaData) {
+        const { data, error } = await supabase
+          .from("familias")
+          .select("*")
+          .eq("id", familiaId)
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .single();
+
+        if (error || !data) {
           toast.error("Família não encontrada");
           router.push("/familias");
           return;
         }
+
+        const familiaData: FamiliaComUnidade = {
+          id: data.id,
+          nome: data.nome,
+          responsavel1Id: data.responsavel_1_id,
+          responsavel1Nome: "",
+          responsavel2Id: data.responsavel_2_id || undefined,
+          responsavel2Nome: "",
+          dependentes: (data.dependentes || []).map((dep: any) => ({
+            ...dep,
+            dataNascimento: dep.dataNascimento ? { toDate: () => new Date(dep.dataNascimento) } : undefined,
+          })),
+          observacoes: data.observacoes || "",
+          unidadeId: data.unidade_id,
+          dataCriacao: data.data_criacao ? { toDate: () => new Date(data.data_criacao) } : { toDate: () => new Date() },
+          dataAtualizacao: data.data_atualizacao ? { toDate: () => new Date(data.data_atualizacao) } : undefined,
+          criadoPor: data.criado_por || "",
+          ativo: data.ativo,
+        };
         
         setFamilia(familiaData);
       } catch (error) {

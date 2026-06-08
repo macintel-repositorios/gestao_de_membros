@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, getDoc, updateDoc, setDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { useAuth } from "@/contexts/auth-context";
 import { NivelAcesso, NIVEIS_ACESSO, TIPOS_UNIDADE, Usuario } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,10 +31,11 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
   
   const [loading, setLoading] = useState(!!userId);
   const [saving, setSaving] = useState(false);
-  const [usuario, setUsuario] = useState<Usuario | null>(null);
   
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [unidadeId, setUnidadeId] = useState("");
   const [nivelAcesso, setNivelAcesso] = useState<NivelAcesso>("user");
 
@@ -48,27 +49,31 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
 
   useEffect(() => {
     async function carregarUsuario() {
-      if (!userId || !db) {
+      if (!userId) {
         setLoading(false);
         return;
       }
 
       try {
-        const userRef = doc(db, "usuarios", userId);
-        const snapshot = await getDoc(userRef);
+        const { data, error } = await supabase
+          .from("usuarios")
+          .select("*")
+          .eq("id", userId)
+          .single();
         
-        if (snapshot.exists()) {
-          const data = snapshot.data() as Usuario;
-          if (data.igrejaId !== igrejaId) {
+        if (error) throw error;
+        
+        if (data) {
+          if (data.igreja_id !== igrejaId) {
             toast.error("Acesso não autorizado");
             if (onCancel) onCancel();
             return;
           }
-          setUsuario({ ...data, uid: snapshot.id });
           setNome(data.nome || "");
           setTelefone(data.telefone || "");
-          setUnidadeId(data.unidadeId || "");
-          setNivelAcesso(data.nivelAcesso || "user");
+          setEmail(data.email || "");
+          setUnidadeId(data.unidade_id || "");
+          setNivelAcesso(data.nivel_acesso as NivelAcesso || "user");
         } else {
           toast.error("Usuário não encontrado");
           if (onCancel) onCancel();
@@ -92,8 +97,13 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
       return;
     }
 
-    if (!userId && !telefone.trim()) {
-      toast.error("Telefone é obrigatório");
+    if (!userId && !email.trim()) {
+      toast.error("Email é obrigatório");
+      return;
+    }
+
+    if (!userId && !senha.trim()) {
+      toast.error("Senha é obrigatória");
       return;
     }
 
@@ -111,55 +121,67 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
     try {
       if (userId) {
         // Edit flow
-        const userRef = doc(db!, "usuarios", userId);
-        await updateDoc(userRef, {
-          nome: nome.trim(),
-          unidadeId,
-          nivelAcesso,
-        });
+        const { error } = await supabase
+          .from("usuarios")
+          .update({
+            nome: nome.trim(),
+            telefone: telefone.replace(/\D/g, ""),
+            unidade_id: unidadeId,
+            nivel_acesso: nivelAcesso,
+          })
+          .eq("id", userId);
+
+        if (error) throw error;
 
         toast.success("Usuário atualizado com sucesso!");
         if (onSuccess) onSuccess();
       } else {
-        // Create flow
-        const phoneDigits = telefone.replace(/\D/g, "");
-        if (phoneDigits.length < 10) {
-          toast.error("Telefone inválido");
-          setSaving(false);
-          return;
-        }
+        // Create flow - create a secondary non-persisting Supabase client
+        const tempSupabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          {
+            auth: { persistSession: false }
+          }
+        );
 
-        // Verifica se já existe usuário com este telefone
-        const usuariosRef = collection(db!, "usuarios");
-        const q = query(usuariosRef, where("telefone", "==", telefone));
-        const snapshot = await getDocs(q);
-
-        if (!snapshot.empty) {
-          toast.error("Já existe um usuário com este telefone");
-          setSaving(false);
-          return;
-        }
-
-        const newUserId = `+55${phoneDigits}`;
-        const userRef = doc(db!, "usuarios", newUserId);
-
-        await setDoc(userRef, {
-          telefone,
-          nome: nome.trim(),
-          nivelAcesso,
-          igrejaId,
-          unidadeId,
-          ativo: true,
-          dataCriacao: Timestamp.now(),
-          criadoPor: currentUser?.uid,
+        // Sign up user in Auth
+        const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+          email: email.trim().toLowerCase(),
+          password: senha,
+          options: {
+            data: {
+              nome: nome.trim()
+            }
+          }
         });
 
-        toast.success("Usuário criado com sucesso!");
+        if (authError) throw authError;
+        const newAuthUser = authData.user;
+        if (!newAuthUser) throw new Error("Erro ao criar credenciais de acesso");
+
+        // Insert into public.usuarios table
+        const { error: dbError } = await supabase
+          .from("usuarios")
+          .insert({
+            id: newAuthUser.id,
+            nome: nome.trim(),
+            telefone: telefone.replace(/\D/g, ""),
+            email: email.trim().toLowerCase(),
+            nivel_acesso: nivelAcesso,
+            igreja_id: igrejaId,
+            unidade_id: unidadeId,
+            ativo: true,
+          });
+
+        if (dbError) throw dbError;
+
+        toast.success("Usuário cadastrado com sucesso! Um e-mail de confirmação foi enviado.");
         if (onSuccess) onSuccess();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao salvar usuário:", error);
-      toast.error("Erro ao salvar usuário");
+      toast.error(error.message || "Erro ao salvar usuário");
     } finally {
       setSaving(false);
     }
@@ -183,7 +205,7 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
           Dados do Usuário
         </CardTitle>
         <CardDescription>
-          {userId ? `Telefone: ${telefone}` : "O usuário poderá fazer login usando o telefone cadastrado"}
+          {userId ? `Email: ${email}` : "O usuário poderá fazer login usando as credenciais cadastradas"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -199,20 +221,42 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="telefone">Telefone (WhatsApp)</Label>
+            <Input
+              id="telefone"
+              value={telefone}
+              onChange={(e) => setTelefone(formatPhone(e.target.value))}
+              placeholder="(00) 00000-0000"
+            />
+          </div>
+
           {!userId && (
-            <div className="space-y-2">
-              <Label htmlFor="telefone">Telefone (WhatsApp) *</Label>
-              <Input
-                id="telefone"
-                value={telefone}
-                onChange={(e) => setTelefone(formatPhone(e.target.value))}
-                placeholder="(00) 00000-0000"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                O usuário usará este número para fazer login via SMS
-              </p>
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="email@exemplo.com"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="senha">Senha de Acesso *</Label>
+                <Input
+                  id="senha"
+                  type="password"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                />
+              </div>
+            </>
           )}
 
           <div className="space-y-2">

@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getDoc, getDocs, query } from "firebase/firestore";
-import { getMembroDoc, getMembrosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { MembroForm } from "@/components/membros/membro-form";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,18 +25,48 @@ export default function EditarMembroPage() {
 
     async function loadMembro() {
       try {
-        // Search for member in all accessible units
-        for (const unidadeId of unidadesAcessiveis) {
-          const docRef = getMembroDoc(igrejaId!, unidadeId, params.id as string);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setMembro({ id: docSnap.id, unidadeId, ...docSnap.data() } as Membro);
-            setMembroUnidadeId(unidadeId);
-            return;
-          }
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("id", params.id as string)
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .single();
+          
+        if (error || !data) {
+          router.push("/membros");
+          return;
         }
-        // Not found in any unit
-        router.push("/membros");
+
+        const m: Membro = {
+          id: data.id,
+          nome: data.nome,
+          tipo: data.tipo as any,
+          cargo: data.cargo as any,
+          cargoDescricao: data.cargo_descricao || "",
+          telefone: data.telefone || "",
+          email: data.email || "",
+          fotoUrl: data.foto_url || "",
+          ativo: data.ativo,
+          observacoes: data.observacoes || "",
+          dataNascimento: data.data_nascimento ? { toDate: () => new Date(data.data_nascimento + "T12:00:00") } : undefined,
+          dataCadastro: data.data_cadastro ? { toDate: () => new Date(data.data_cadastro + "T12:00:00") } : undefined,
+          dataBatismo: data.data_batismo ? { toDate: () => new Date(data.data_batismo + "T12:00:00") } : undefined,
+          unidadeId: data.unidade_id,
+          coordenadas: data.latitude && data.longitude ? { lat: data.latitude, lng: data.longitude } : undefined,
+          endereco: {
+            logradouro: data.logradouro || "",
+            numero: data.numero || "",
+            complemento: data.complemento || "",
+            bairro: data.bairro || "",
+            cidade: data.cidade || "",
+            estado: data.estado || "",
+            cep: data.cep || "",
+          }
+        };
+
+        setMembro(m);
+        setMembroUnidadeId(data.unidade_id);
       } catch (error) {
         console.error("Erro ao carregar membro:", error);
       } finally {

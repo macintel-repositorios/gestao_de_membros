@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  query,
-  orderBy,
-  onSnapshot,
-  updateDoc,
-  Timestamp,
-} from "firebase/firestore";
-import { getVisitantesCollection, getVisitanteDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +66,7 @@ import {
   Link as LinkIcon,
   Copy,
   Share2,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Visitante } from "@/lib/types";
@@ -97,46 +91,56 @@ export default function VisitantesPage() {
 
   const canEdit = nivelAcesso === "admin" || nivelAcesso === "full";
 
-  useEffect(() => {
+  const loadVisitantes = async () => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
       setLoading(false);
       return;
     }
 
-    const unsubscribes: (() => void)[] = [];
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("visitantes")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesAcessiveis)
+        .order("data_visita", { ascending: false });
 
-    unidadesAcessiveis.forEach((unidadeId) => {
-      const visitantesRef = getVisitantesCollection(igrejaId, unidadeId);
-      const q = query(visitantesRef, orderBy("dataVisita", "desc"));
+      if (error) throw error;
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const visitantesData: VisitanteComUnidade[] = [];
-        snapshot.forEach((docSnap) => {
-          visitantesData.push({ 
-            id: docSnap.id, 
-            ...docSnap.data(),
-            unidadeId 
-          } as VisitanteComUnidade);
-        });
-        
-        setVisitantes((prev) => {
-          const outrosUnidades = prev.filter((v) => v.unidadeId !== unidadeId);
-          return [...outrosUnidades, ...visitantesData].sort((a, b) => {
-            const dataA = a.dataVisita?.toDate?.() || new Date(0);
-            const dataB = b.dataVisita?.toDate?.() || new Date(0);
-            return dataB.getTime() - dataA.getTime();
-          });
-        });
-        setLoading(false);
-      });
+      const list: VisitanteComUnidade[] = (data || []).map((row) => ({
+        id: row.id,
+        nome: row.nome,
+        telefone: row.telefone || "",
+        email: row.email || "",
+        dataNascimento: row.data_nascimento ? { toDate: () => new Date(row.data_nascimento + "T12:00:00") } : undefined,
+        dataVisita: row.data_visita ? { toDate: () => new Date(row.data_visita + "T12:00:00") } : { toDate: () => new Date() },
+        acompanhantes: row.acompanhantes || [],
+        jaRecebeuJesus: row.ja_recebeu_jesus,
+        pertenceIgreja: row.pertence_igreja,
+        qualIgreja: row.qual_igreja || "",
+        primeiraVisita: row.primeira_visita,
+        convidadoPor: row.convidado_por || "",
+        pedidoOracao: row.pedido_oracao || "",
+        observacoes: row.observacoes || "",
+        convertidoParaMembro: row.convertido_para_membro,
+        membroId: row.membro_id || undefined,
+        unidadeId: row.unidade_id,
+        ativo: row.ativo ?? true,
+        dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : undefined,
+      }));
 
-      unsubscribes.push(unsubscribe);
-    });
+      setVisitantes(list);
+    } catch (err) {
+      console.error("Erro ao carregar visitantes:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      unsubscribes.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [igrejaId, unidadesAcessiveis]);
+  useEffect(() => {
+    loadVisitantes();
+  }, [igrejaId, unidadesAcessiveis.join(",")]);
 
   const filteredVisitantes = visitantes.filter((visitante) => {
     // Status filter
@@ -161,10 +165,15 @@ export default function VisitantesPage() {
     if (!visitanteToDeactivate || !igrejaId) return;
 
     try {
-      const visitanteRef = getVisitanteDoc(igrejaId, visitanteToDeactivate.unidadeId, visitanteToDeactivate.id);
-      await updateDoc(visitanteRef, { ativo: false });
+      const { error } = await supabase
+        .from("visitantes")
+        .update({ ativo: false })
+        .eq("id", visitanteToDeactivate.id);
+
+      if (error) throw error;
       toast.success("Visitante desativado com sucesso");
       setVisitanteToDeactivate(null);
+      loadVisitantes();
     } catch (error) {
       console.error("Erro ao desativar visitante:", error);
       toast.error("Erro ao desativar visitante");
@@ -179,7 +188,7 @@ export default function VisitantesPage() {
     return phone;
   };
 
-  const formatDate = (timestamp: Timestamp | undefined) => {
+  const formatDate = (timestamp: { toDate: () => Date } | undefined) => {
     if (!timestamp?.toDate) return "-";
     return timestamp.toDate().toLocaleDateString("pt-BR");
   };
@@ -217,6 +226,7 @@ export default function VisitantesPage() {
     const agora = new Date();
     return data.getMonth() === agora.getMonth() && data.getFullYear() === agora.getFullYear();
   }).length;
+
 
   return (
     <div className="space-y-6">
@@ -685,6 +695,7 @@ export default function VisitantesPage() {
                 onSuccess={() => {
                   setVisitanteParaEditar(null);
                   toast.success("Visitante atualizado com sucesso!");
+                  loadVisitantes();
                 }}
               />
             </div>

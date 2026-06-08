@@ -17,8 +17,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Church } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { TIPOS_UNIDADE } from "@/lib/types";
-import { getDoc } from "firebase/firestore";
-import { getMembroDoc, getVisitanteDoc, getFamiliaDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 
 const pathNames: Record<string, string> = {
   dashboard: "Dashboard",
@@ -59,10 +58,9 @@ export function Header() {
     return false;
   }, [segments]);
 
-  // Busca o nome do membro/visitante quando a URL contém um ID
+  // Busca o nome do membro/visitante/família no Supabase quando a URL contém um ID
   useEffect(() => {
-    // Só executa se houver um ID potencial na URL
-    if (!hasEntityId || !igrejaId || !unidadesAcessiveis || unidadesAcessiveis.length === 0) {
+    if (!hasEntityId || !igrejaId) {
       return;
     }
 
@@ -77,52 +75,32 @@ export function Header() {
         
         // Verifica se o segmento parece ser um ID (não está no dicionário de nomes)
         if (!pathNames[segment] && prevSegment) {
-          // Se o segmento anterior é "membros", busca o membro
-          if (prevSegment === "membros") {
-            for (const unidadeId of unidadesAcessiveis) {
-              try {
-                const docRef = getMembroDoc(igrejaId!, unidadeId, segment);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                  const data = docSnap.data();
-                  newNames[segment] = data.nome || segment;
-                  break;
-                }
-              } catch {
-                // Continua tentando outras unidades
+          if (prevSegment === "membros" || prevSegment === "visitantes") {
+            try {
+              const { data, error } = await supabase
+                .from("membros")
+                .select("nome")
+                .eq("id", segment)
+                .single();
+              if (!error && data) {
+                newNames[segment] = data.nome;
               }
+            } catch (err) {
+              console.error(err);
             }
           }
-          // Se o segmento anterior é "visitantes", busca o visitante
-          else if (prevSegment === "visitantes") {
-            for (const unidadeId of unidadesAcessiveis) {
-              try {
-                const docRef = getVisitanteDoc(igrejaId!, unidadeId, segment);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                  const data = docSnap.data();
-                  newNames[segment] = data.nome || segment;
-                  break;
-                }
-              } catch {
-                // Continua tentando outras unidades
-              }
-            }
-          }
-          // Se o segmento anterior é "familias", busca a família
           else if (prevSegment === "familias") {
-            for (const unidadeId of unidadesAcessiveis) {
-              try {
-                const docRef = getFamiliaDoc(igrejaId!, unidadeId, segment);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                  const data = docSnap.data();
-                  newNames[segment] = data.nome || segment;
-                  break;
-                }
-              } catch {
-                // Continua tentando outras unidades
+            try {
+              const { data, error } = await supabase
+                .from("familias")
+                .select("nome")
+                .eq("id", segment)
+                .single();
+              if (!error && data) {
+                newNames[segment] = data.nome;
               }
+            } catch (err) {
+              console.error(err);
             }
           }
         }
@@ -138,7 +116,7 @@ export function Header() {
     return () => {
       isMounted = false;
     };
-  }, [hasEntityId, igrejaId, unidadesAcessiveis, segments]);
+  }, [hasEntityId, igrejaId, segments]);
 
   // Função para obter o nome do segmento
   const getSegmentName = (segment: string) => {

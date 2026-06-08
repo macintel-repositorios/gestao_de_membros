@@ -2,17 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  getDocs, 
-  getDoc,
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  collection,
-  Timestamp 
-} from "firebase/firestore";
-import { getIgrejasCollection, getUnidadesCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
+import { carregarIgreja, carregarTodasUnidades } from "@/lib/supabase-db";
 import { useAuth } from "@/contexts/auth-context";
 import { Igreja, Unidade, TIPOS_IGREJA, TIPOS_UNIDADE, TipoUnidade } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -68,12 +59,12 @@ import {
   GitBranch,
 } from "lucide-react";
 import Link from "next/link";
-import { db } from "@/lib/firebase";
 
 const CORES_TIPO_UNIDADE: Record<TipoUnidade, string> = {
   sede: "#16a34a",
   congregacao: "#2563eb",
   subcongregacao: "#9333ea",
+  ponto_evangelistico: "#f97316",
 };
 
 interface UnidadeComContagem extends Unidade {
@@ -98,6 +89,20 @@ export default function GerenciarIgrejasPage() {
   const [deleting, setDeleting] = useState(false);
   const [expandedIgrejas, setExpandedIgrejas] = useState<Set<string>>(new Set());
   const [expandedUnidades, setExpandedUnidades] = useState<Set<string>>(new Set());
+
+  // Filtros
+  const [filterNome, setFilterNome] = useState("");
+  const [filterTipo, setFilterTipo] = useState<string>("todos");
+
+  const getUnidadesFiltradas = (igreja: IgrejaComHierarquia) => {
+    return igreja.todasUnidades.filter(u => {
+      if (filterNome && !u.nome.toLowerCase().includes(filterNome.toLowerCase())) return false;
+      if (filterTipo !== "todos" && u.tipo !== filterTipo) return false;
+      return true;
+    });
+  };
+
+  const isFilterActive = filterNome !== "" || filterTipo !== "todos";
   
   // Sheet states
   const [isNovoIgrejaOpen, setIsNovoIgrejaOpen] = useState(false);
@@ -127,21 +132,16 @@ export default function GerenciarIgrejasPage() {
     }
     try {
       setLoading(true);
-      const churchDocRef = doc(db!, "igrejas", igrejaId);
-      const docSnap = await getDoc(churchDocRef);
+      const igrejaData = await carregarIgreja(igrejaId);
       
       const igrejasComHierarquia: IgrejaComHierarquia[] = [];
       
-      if (docSnap.exists()) {
-        const igrejaData = { id: docSnap.id, ...docSnap.data() } as Igreja;
-        
+      if (igrejaData) {
         // Carrega as unidades desta igreja
-        const unidadesRef = getUnidadesCollection(igrejaData.id);
-        const unidadesSnapshot = await getDocs(unidadesRef);
+        const unidadesResult = await carregarTodasUnidades(igrejaId);
         
-        const unidades = unidadesSnapshot.docs.map(uDoc => ({
-          ...(uDoc.data() as Unidade),
-          id: uDoc.id,
+        const unidades = unidadesResult.map(u => ({
+          ...u,
           filhas: []
         })) as UnidadeComContagem[];
 
@@ -149,9 +149,13 @@ export default function GerenciarIgrejasPage() {
         let totalMembros = 0;
         for (const unidade of unidades) {
           try {
-            const membrosRef = collection(db!, "igrejas", igrejaData.id, "unidades", unidade.id, "membros");
-            const membrosSnapshot = await getDocs(membrosRef);
-            unidade.totalMembros = membrosSnapshot.docs.filter(m => m.data().ativo !== false).length;
+            const { count, error } = await supabase
+              .from("membros")
+              .select("*", { count: "exact", head: true })
+              .eq("unidade_id", unidade.id)
+              .eq("situacao", "ativo");
+            
+            unidade.totalMembros = (!error && count !== null) ? count : 0;
             totalMembros += unidade.totalMembros;
           } catch {
             unidade.totalMembros = 0;
@@ -162,15 +166,33 @@ export default function GerenciarIgrejasPage() {
         const sedes = unidades.filter(u => u.tipo === "sede");
         const congregacoes = unidades.filter(u => u.tipo === "congregacao");
         const subcongregacoes = unidades.filter(u => u.tipo === "subcongregacao");
+        const pontosEvangelisticos = unidades.filter(u => u.tipo === "ponto_evangelistico");
+
+        // Associa pontos evangelísticos a quem for de direito (sede, congregação ou subcongregação)
+        pontosEvangelisticos.forEach(ponto => {
+          const pai = unidades.find(u => u.id === ponto.unidadePaiId);
+          if (pai) {
+            pai.filhas = pai.filhas || [];
+            pai.filhas.push(ponto);
+          }
+        });
 
         // Associa subcongregações às congregações
-        congregacoes.forEach(cong => {
-          cong.filhas = subcongregacoes.filter(sub => sub.unidadePaiId === cong.id);
+        subcongregacoes.forEach(sub => {
+          const pai = unidades.find(u => u.id === sub.unidadePaiId);
+          if (pai) {
+            pai.filhas = pai.filhas || [];
+            pai.filhas.push(sub);
+          }
         });
 
         // Associa congregações às sedes
-        sedes.forEach(sede => {
-          sede.filhas = congregacoes.filter(cong => cong.unidadePaiId === sede.id);
+        congregacoes.forEach(cong => {
+          const pai = unidades.find(u => u.id === cong.unidadePaiId);
+          if (pai) {
+            pai.filhas = pai.filhas || [];
+            pai.filhas.push(cong);
+          }
         });
 
         igrejasComHierarquia.push({
@@ -194,11 +216,17 @@ export default function GerenciarIgrejasPage() {
   };
 
   const handleDeleteIgreja = async () => {
-    if (!deleteId || !db) return;
+    if (!deleteId) return;
 
     try {
       setDeleting(true);
-      await deleteDoc(doc(db, "igrejas", deleteId));
+      const { error } = await supabase
+        .from("igrejas")
+        .delete()
+        .eq("id", deleteId);
+      
+      if (error) throw error;
+      
       setIgrejas(prev => prev.filter(i => i.id !== deleteId));
       setDeleteId(null);
       toast.success("Igreja excluída com sucesso!");
@@ -211,11 +239,17 @@ export default function GerenciarIgrejasPage() {
   };
 
   const handleDeleteUnidade = async () => {
-    if (!deleteUnidadeId || !db) return;
+    if (!deleteUnidadeId) return;
 
     try {
       setDeleting(true);
-      await deleteDoc(doc(db, "igrejas", deleteUnidadeId.igrejaId, "unidades", deleteUnidadeId.unidadeId));
+      const { error } = await supabase
+        .from("unidades")
+        .delete()
+        .eq("id", deleteUnidadeId.unidadeId);
+
+      if (error) throw error;
+      
       await loadIgrejasComHierarquia();
       setDeleteUnidadeId(null);
       toast.success("Unidade excluída com sucesso!");
@@ -267,6 +301,9 @@ export default function GerenciarIgrejasPage() {
     if (tipo === "subcongregacao") {
       return igreja.todasUnidades.filter(u => u.tipo === "congregacao");
     }
+    if (tipo === "ponto_evangelistico") {
+      return igreja.todasUnidades.filter(u => u.tipo === "sede" || u.tipo === "congregacao" || u.tipo === "subcongregacao");
+    }
     return [];
   };
 
@@ -274,15 +311,20 @@ export default function GerenciarIgrejasPage() {
     const hasFilhas = unidade.filhas && unidade.filhas.length > 0;
     const isExpanded = expandedUnidades.has(unidade.id);
 
-    // Determina qual tipo de unidade pode ser criada como filha
-    const tipoFilha: TipoUnidade | null = 
-      unidade.tipo === "sede" ? "congregacao" : 
-      unidade.tipo === "congregacao" ? "subcongregacao" : null;
+    // Determina quais tipos de unidade podem ser criadas como filhas
+    const tiposFilhas: TipoUnidade[] = [];
+    if (unidade.tipo === "sede") {
+      tiposFilhas.push("congregacao", "ponto_evangelistico");
+    } else if (unidade.tipo === "congregacao") {
+      tiposFilhas.push("subcongregacao", "ponto_evangelistico");
+    } else if (unidade.tipo === "subcongregacao") {
+      tiposFilhas.push("ponto_evangelistico");
+    }
 
     return (
       <div key={unidade.id} style={{ marginLeft: depth * 24 }}>
         <div className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-muted/50 group">
-          {hasFilhas || tipoFilha ? (
+          {hasFilhas || tiposFilhas.length > 0 ? (
             <button onClick={() => toggleUnidade(unidade.id)} className="p-0.5">
               {isExpanded ? (
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -324,17 +366,18 @@ export default function GerenciarIgrejasPage() {
           </div>
 
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {tipoFilha && (
+            {tiposFilhas.map(tipo => (
               <Button 
+                key={tipo}
                 variant="ghost" 
                 size="icon" 
                 className="h-7 w-7"
-                onClick={() => abrirModalNovaUnidade(igrejaId, tipoFilha, unidade.id)}
-                title={`Adicionar ${TIPOS_UNIDADE[tipoFilha]}`}
+                onClick={() => abrirModalNovaUnidade(igrejaId, tipo, unidade.id)}
+                title={`Adicionar ${TIPOS_UNIDADE[tipo]}`}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5" style={{ color: CORES_TIPO_UNIDADE[tipo] }} />
               </Button>
-            )}
+            ))}
              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
               setParentIgrejaId(igrejaId);
               setUnidadeParaEditarId(unidade.id);
@@ -352,18 +395,19 @@ export default function GerenciarIgrejasPage() {
           </div>
         </div>
 
-        {(hasFilhas || tipoFilha) && isExpanded && (
+        {(hasFilhas || tiposFilhas.length > 0) && isExpanded && (
           <div className="border-l-2 border-muted ml-2.5">
             {unidade.filhas?.map(filha => renderUnidade(filha, igrejaId, depth + 1))}
-            {tipoFilha && (
+            {tiposFilhas.map(tipo => (
               <button 
-                onClick={() => abrirModalNovaUnidade(igrejaId, tipoFilha, unidade.id)}
+                key={tipo}
+                onClick={() => abrirModalNovaUnidade(igrejaId, tipo, unidade.id)}
                 className="flex items-center gap-2 py-2 px-3 ml-6 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                <Plus className="h-4 w-4" />
-                Adicionar {TIPOS_UNIDADE[tipoFilha]}
+                <Plus className="h-4 w-4" style={{ color: CORES_TIPO_UNIDADE[tipo] }} />
+                Adicionar {TIPOS_UNIDADE[tipo]}
               </button>
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -404,43 +448,53 @@ export default function GerenciarIgrejasPage() {
         </Button>
       </div>
 
+      {/* Filtros */}
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+          <div className="flex-1 min-w-[200px]">
+            <Input
+              placeholder="Buscar congregação/unidade por nome..."
+              value={filterNome}
+              onChange={(e) => setFilterNome(e.target.value)}
+            />
+          </div>
+          <Select value={filterTipo} onValueChange={setFilterTipo}>
+            <SelectTrigger className="w-full sm:w-64">
+              <SelectValue placeholder="Tipo de Unidade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas as Congregações / Pontos</SelectItem>
+              <SelectItem value="sede">Sede</SelectItem>
+              <SelectItem value="congregacao">Congregação</SelectItem>
+              <SelectItem value="subcongregacao">Subcongregação</SelectItem>
+              <SelectItem value="ponto_evangelistico">Ponto Evangelístico</SelectItem>
+            </SelectContent>
+          </Select>
+          {isFilterActive && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFilterNome("");
+                setFilterTipo("todos");
+              }}
+            >
+              Limpar Filtros
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Estatísticas Gerais */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Church className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total de Igrejas</p>
-                <p className="text-2xl font-bold">{igrejas.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: `${CORES_TIPO_UNIDADE.sede}20` }}>
-                <Building2 className="h-5 w-5" style={{ color: CORES_TIPO_UNIDADE.sede }} />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total de Unidades</p>
-                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + i.totalUnidades, 0)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <Church className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total de Membros</p>
-                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + i.totalMembros, 0)}</p>
+                <p className="text-sm text-muted-foreground">Congregações</p>
+                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + (isFilterActive ? getUnidadesFiltradas(i).filter(u => u.tipo === "congregacao").length : i.todasUnidades.filter(u => u.tipo === "congregacao").length), 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -449,11 +503,50 @@ export default function GerenciarIgrejasPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                <GitBranch className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                <Building2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Subcongregações</p>
+                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + (isFilterActive ? getUnidadesFiltradas(i).filter(u => u.tipo === "subcongregacao").length : i.todasUnidades.filter(u => u.tipo === "subcongregacao").length), 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <MapPin className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Pontos Evang.</p>
+                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + (isFilterActive ? getUnidadesFiltradas(i).filter(u => u.tipo === "ponto_evangelistico").length : i.todasUnidades.filter(u => u.tipo === "ponto_evangelistico").length), 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
+                <Users className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Membros</p>
+                <p className="text-2xl font-bold">{igrejas.reduce((acc, i) => acc + (isFilterActive ? getUnidadesFiltradas(i).reduce((mAcc, u) => mAcc + (u.totalMembros || 0), 0) : i.totalMembros), 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <GitBranch className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Hierarquia</p>
-                <p className="text-2xl font-bold">3 níveis</p>
+                <p className="text-2xl font-bold">4 níveis</p>
               </div>
             </div>
           </CardContent>
@@ -477,6 +570,10 @@ export default function GerenciarIgrejasPage() {
               <div className="h-3 w-3 rounded-full" style={{ backgroundColor: CORES_TIPO_UNIDADE.subcongregacao }} />
               <span className="text-sm">Subcongregação</span>
             </div>
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: CORES_TIPO_UNIDADE.ponto_evangelistico }} />
+              <span className="text-sm">Ponto Evangelístico</span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -489,7 +586,7 @@ export default function GerenciarIgrejasPage() {
             <p className="mt-2 text-center text-sm text-muted-foreground">
               Comece cadastrando a primeira igreja do sistema.
             </p>
-            <Button onClick={() => setNovaIgrejaModal(true)} className="mt-6">
+            <Button onClick={() => setIsNovoIgrejaOpen(true)} className="mt-6">
               <Plus className="mr-2 h-4 w-4" />
               Cadastrar Igreja
             </Button>
@@ -561,19 +658,58 @@ export default function GerenciarIgrejasPage() {
                         <h4 className="text-sm font-medium text-muted-foreground">Estrutura Hierárquica</h4>
                       </div>
 
-                      {igreja.unidades.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">Nenhuma unidade cadastrada</p>
-                          <p className="text-xs mb-4">Adicione a sede principal desta igreja</p>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => abrirModalNovaUnidade(igreja.id, "sede")}
-                          >
-                            <Plus className="mr-2 h-3.5 w-3.5" />
-                            Adicionar Sede
-                          </Button>
+                      {isFilterActive ? (
+                        <div className="space-y-1">
+                          {getUnidadesFiltradas(igreja).length === 0 ? (
+                            <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma unidade encontrada para os filtros aplicados.</p>
+                          ) : (
+                            getUnidadesFiltradas(igreja).map(unidade => (
+                              <div key={unidade.id} className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-muted/50 group">
+                                <div 
+                                  className="h-3 w-3 rounded-full shrink-0"
+                                  style={{ backgroundColor: CORES_TIPO_UNIDADE[unidade.tipo] }}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium truncate">{unidade.nome}</span>
+                                    <Badge 
+                                      variant="secondary" 
+                                      className="text-xs"
+                                      style={{ 
+                                        backgroundColor: `${CORES_TIPO_UNIDADE[unidade.tipo]}20`,
+                                        color: CORES_TIPO_UNIDADE[unidade.tipo],
+                                      }}
+                                    >
+                                      {TIPOS_UNIDADE[unidade.tipo]}
+                                    </Badge>
+                                  </div>
+                                  {unidade.dirigente && (
+                                    <p className="text-xs text-muted-foreground truncate">{unidade.dirigente}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Users className="h-4 w-4" />
+                                  <span>{unidade.totalMembros || 0}</span>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                    setParentIgrejaId(igreja.id);
+                                    setUnidadeParaEditarId(unidade.id);
+                                  }}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => setDeleteUnidadeId({ igrejaId: igreja.id, unidadeId: unidade.id })}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-1">

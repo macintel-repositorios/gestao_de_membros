@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, getDoc, updateDoc, addDoc, Timestamp, collection, getDocs, writeBatch } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getUnidadesCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { RegionalSetor, Unidade, TIPOS_UNIDADE } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -21,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldAlert, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { carregarTodasUnidades } from "@/lib/supabase-db";
 
 interface RegionalFormProps {
   regionalId?: string;
@@ -30,7 +29,6 @@ interface RegionalFormProps {
 
 export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormProps) {
   const { igrejaId, nivelAcesso } = useAuth();
-  const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!regionalId);
   const [saving, setSaving] = useState(false);
   
@@ -60,12 +58,7 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
 
     const loadIgrejas = async () => {
       try {
-        const unidadesRef = getUnidadesCollection(igrejaId);
-        const snapshot = await getDocs(unidadesRef);
-        const list: Unidade[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Unidade);
-        });
+        const list = await carregarTodasUnidades(igrejaId);
         setTodasIgrejas(list);
       } catch (error) {
         console.error("Erro ao carregar igrejas:", error);
@@ -84,18 +77,29 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
 
     const loadRegional = async () => {
       try {
-        const docRef = doc(db!, "igrejas", igrejaId, "regionais_setores", regionalId);
-        const snapshot = await getDoc(docRef);
+        const { data, error } = await supabase
+          .from("regionais_setores")
+          .select("*")
+          .eq("id", regionalId)
+          .single();
         
-        if (snapshot.exists()) {
-          const data = snapshot.data() as RegionalSetor;
+        if (error) throw error;
+        
+        if (data) {
           setTipo(data.tipo || "regional");
           setNumero(data.numero || 1);
           setDirigente(data.dirigente || "");
-          setHospedeiraId(data.hospedeiraId || "");
-          setOriginalHospedeiraId(data.hospedeiraId || null);
+          setHospedeiraId(data.hospedeira_id || "");
+          setOriginalHospedeiraId(data.hospedeira_id || null);
           
-          const membros = data.igrejasMembrosIds || [];
+          // Buscar unidades associadas a esta regional/setor
+          const { data: membrosData, error: membErr } = await supabase
+            .from("unidades")
+            .select("id")
+            .eq("regional_setor_id", regionalId)
+            .eq("eh_hospedeira", false);
+          
+          const membros = (!membErr && membrosData) ? membrosData.map(m => m.id) : [];
           setIgrejasMembrosIds(membros);
           setOriginalMembrosIds(membros);
         } else {
@@ -132,80 +136,88 @@ export function RegionalForm({ regionalId, onSuccess, onCancel }: RegionalFormPr
     }
 
     setSaving(true);
-    const batch = writeBatch(db!);
     const labelTipo = tipo === "regional" ? "Regional" : "Setor";
     const nome = `${labelTipo} ${numero}`;
 
     try {
-      let targetId = regionalId;
+      let targetId = regionalId || "";
 
       if (!regionalId) {
         // Criar Novo
-        const regionaisRef = collection(db!, "igrejas", igrejaId, "regionais_setores");
-        const docRef = await addDoc(regionaisRef, {
-          tipo,
-          numero,
-          nome,
-          hospedeiraId,
-          dirigente: dirigente.trim() || null,
-          igrejasMembrosIds,
-          dataCriacao: Timestamp.now(),
-        });
-        targetId = docRef.id;
+        const { data: newReg, error } = await supabase
+          .from("regionais_setores")
+          .insert({
+            igreja_id: igrejaId,
+            tipo,
+            numero,
+            nome,
+            hospedeira_id: hospedeiraId,
+            dirigente: dirigente.trim() || null,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        targetId = newReg.id;
       } else {
         // Editar Existente
-        const docRef = doc(db!, "igrejas", igrejaId, "regionais_setores", regionalId);
-        await updateDoc(docRef, {
-          tipo,
-          numero,
-          nome,
-          hospedeiraId,
-          dirigente: dirigente.trim() || null,
-          igrejasMembrosIds,
-        });
+        const { error } = await supabase
+          .from("regionais_setores")
+          .update({
+            tipo,
+            numero,
+            nome,
+            hospedeira_id: hospedeiraId,
+            dirigente: dirigente.trim() || null,
+          })
+          .eq("id", regionalId);
+        if (error) throw error;
       }
 
       // Atualizar a igreja hospedeira
-      const newHospRef = doc(db!, "igrejas", igrejaId, "unidades", hospedeiraId);
-      batch.update(newHospRef, {
-        ehHospedeira: true,
-        hospedaRegionalId: targetId,
-        regionalSetorId: targetId,
-      });
+      const { error: newHospErr } = await supabase
+        .from("unidades")
+        .update({
+          eh_hospedeira: true,
+          regional_setor_id: targetId,
+        })
+        .eq("id", hospedeiraId);
+      if (newHospErr) throw newHospErr;
 
       // Se a hospedeira mudou, remove o vínculo da anterior
       if (originalHospedeiraId && originalHospedeiraId !== hospedeiraId) {
-        const oldHospRef = doc(db!, "igrejas", igrejaId, "unidades", originalHospedeiraId);
-        batch.update(oldHospRef, {
-          ehHospedeira: false,
-          hospedaRegionalId: null,
-          regionalSetorId: null,
-        });
+        const { error: oldHospErr } = await supabase
+          .from("unidades")
+          .update({
+            eh_hospedeira: false,
+            regional_setor_id: null,
+          })
+          .eq("id", originalHospedeiraId);
+        if (oldHospErr) throw oldHospErr;
       }
 
       // Atualizar congregações pertencentes
       // Remove o vínculo das que saíram
       const removidas = originalMembrosIds.filter(id => !igrejasMembrosIds.includes(id) && id !== hospedeiraId);
-      removidas.forEach((id) => {
-        const uRef = doc(db!, "igrejas", igrejaId, "unidades", id);
-        batch.update(uRef, {
-          regionalSetorId: null,
-        });
-      });
+      for (const id of removidas) {
+        await supabase
+          .from("unidades")
+          .update({
+            regional_setor_id: null,
+          })
+          .eq("id", id);
+      }
 
       // Adiciona o vínculo nas novas congregações
       const adicionadas = igrejasMembrosIds.filter(id => !originalMembrosIds.includes(id) && id !== hospedeiraId);
-      adicionadas.forEach((id) => {
-        const uRef = doc(db!, "igrejas", igrejaId, "unidades", id);
-        batch.update(uRef, {
-          ehHospedeira: false, // garante que não é tratada como hospedeira de outra
-          hospedaRegionalId: null,
-          regionalSetorId: targetId,
-        });
-      });
-
-      // Commit do batch
-      await batch.commit();
+      for (const id of adicionadas) {
+        await supabase
+          .from("unidades")
+          .update({
+            eh_hospedeira: false,
+            regional_setor_id: targetId,
+          })
+          .eq("id", id);
+      }
 
       toast.success(`${labelTipo} salva com sucesso!`);
       if (onSuccess) onSuccess();

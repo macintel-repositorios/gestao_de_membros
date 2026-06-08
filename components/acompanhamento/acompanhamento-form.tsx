@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { addDoc, query, getDocs, Timestamp } from "firebase/firestore";
-import { getMembrosCollection, getAcompanhamentosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,16 +132,29 @@ export function AcompanhamentoForm({ onSuccess }: AcompanhamentoFormProps) {
 
     const loadMembros = async () => {
       try {
-        const data: Membro[] = [];
-        for (const uId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, uId);
-          const snapshot = await getDocs(query(membrosRef));
-          snapshot.forEach((docSnap) => {
-            data.push({ id: docSnap.id, unidadeId: uId, ...docSnap.data() } as Membro);
-          });
-        }
-        data.sort((a, b) => a.nome.localeCompare(b.nome));
-        setMembros(data);
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .eq("situacao", "ativo");
+
+        if (error) throw error;
+
+        const list: Membro[] = (data || []).map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          telefone: row.telefone || "",
+          tipo: row.tipo,
+          unidadeId: row.unidade_id,
+          fotoUrl: row.foto_url || "",
+          endereco: {
+            bairro: row.bairro || "",
+          },
+        } as any));
+
+        list.sort((a, b) => a.nome.localeCompare(b.nome));
+        setMembros(list);
       } catch (error) {
         console.error("Erro ao carregar membros:", error);
       } finally {
@@ -172,32 +184,34 @@ export function AcompanhamentoForm({ onSuccess }: AcompanhamentoFormProps) {
 
     setLoading(true);
     try {
-      const acompanhamentoData: Record<string, unknown> = {
-        membroId: data.membroId,
-        membroNome: membro.nome,
-        membroFotoUrl: membro.fotoUrl || null,
+      const acompanhamentoData: Record<string, any> = {
+        membro_id: data.membroId,
         tipo: data.tipo,
-        data: Timestamp.fromDate(data.data),
-        responsavelUid: user.uid,
-        responsavelNome: usuario.nome,
+        data: data.data.toISOString(),
+        responsavel_uid: user.id,
         descricao: data.descricao,
         observacoes: data.observacoes || null,
-        proximoContato: data.proximoContato ? Timestamp.fromDate(data.proximoContato) : null,
-        dataCriacao: Timestamp.now(),
+        proximo_contato: data.proximoContato ? data.proximoContato.toISOString() : null,
+        unidade_id: membro.unidadeId,
+        igreja_id: igrejaId,
       };
 
       if (isHospital) {
-        acompanhamentoData.dadosHospital = {
+        acompanhamentoData.dados_hospital = {
           nomeHospital: data.nomeHospital || null,
           enderecoHospital: data.enderecoHospital || null,
           telefoneHospital: data.telefoneHospital || null,
           quartoLeito: data.quartoLeito || null,
           horarioVisita: data.horarioVisita || null,
-          previsaoAlta: data.previsaoAlta ? Timestamp.fromDate(data.previsaoAlta) : null,
+          previsaoAlta: data.previsaoAlta ? data.previsaoAlta.toISOString() : null,
         };
       }
 
-      await addDoc(getAcompanhamentosCollection(igrejaId, membro.unidadeId), acompanhamentoData);
+      const { error } = await supabase
+        .from("acompanhamentos")
+        .insert(acompanhamentoData);
+
+      if (error) throw error;
       toast.success("Acompanhamento registrado com sucesso!");
       
       if (onSuccess) {

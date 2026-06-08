@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { query, onSnapshot, orderBy, collection, getDocs, doc, deleteDoc } from "firebase/firestore";
-import { getUnidadesCollection } from "@/lib/firestore";
-import { db } from "@/lib/firebase";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
 import {
   ShieldAlert,
   Search,
@@ -68,55 +71,62 @@ export default function RegionaisPage() {
 
   const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
 
-  useEffect(() => {
-    if (!igrejaId || !db) {
+  const loadRegionaisData = async () => {
+    if (!igrejaId) {
       setLoading(false);
       return;
     }
 
-    // Listener para todas as unidades/igrejas (necessário para mapear nomes e membros)
-    const unidadesRef = getUnidadesCollection(igrejaId);
-    const qUnidades = query(unidadesRef, orderBy("nome", "asc"));
+    try {
+      // 1. Busca todas as unidades da igreja
+      const { data: todasUnidades, error: uErr } = await supabase
+        .from("unidades")
+        .select("*")
+        .eq("igreja_id", igrejaId);
+      
+      if (uErr) throw uErr;
 
-    // Listener para regionais_setores
-    const regionaisRef = collection(db, "igrejas", igrejaId, "regionais_setores");
-    const qRegionais = query(regionaisRef, orderBy("numero", "asc"));
+      // 2. Busca todas as regionais/setores
+      const { data: regionaisData, error: rErr } = await supabase
+        .from("regionais_setores")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .order("numero", { ascending: true });
 
-    let todasUnidades: Unidade[] = [];
-    const unsubUnidades = onSnapshot(qUnidades, (snapshot) => {
-      todasUnidades = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }) as Unidade);
-    });
+      if (rErr) throw rErr;
 
-    const unsubRegionais = onSnapshot(qRegionais, async (snapshot) => {
       const regionaisList: RegionalComContagem[] = [];
 
-      for (const docSnap of snapshot.docs) {
-        const regData = { id: docSnap.id, ...docSnap.data() } as RegionalSetor;
-        
-        // Encontra o nome da igreja hospedeira
-        const hospedeira = todasUnidades.find((u) => u.id === regData.hospedeiraId);
+      for (const row of regionaisData || []) {
+        const regData: RegionalSetor = {
+          id: row.id,
+          tipo: row.tipo as "regional" | "setor",
+          numero: row.numero,
+          nome: row.nome,
+          hospedeiraId: row.hospedeira_id,
+          dirigente: row.dirigente,
+          dataCriacao: row.data_criacao,
+        };
+
+        const hospedeira = (todasUnidades || []).find((u) => u.id === regData.hospedeiraId);
         const hospedeiraNome = hospedeira?.nome || "Não definida";
 
-        // Filtra congregações pertencentes a esta regional
-        const igrejasPertencentes = todasUnidades.filter(
-          (u) => u.regionalSetorId === regData.id && u.id !== regData.hospedeiraId
+        const igrejasPertencentes = (todasUnidades || []).filter(
+          (u) => u.regional_setor_id === regData.id && u.id !== regData.hospedeiraId
         );
         const igrejasMembrosNomes = igrejasPertencentes.map((u) => u.nome);
 
-        // Soma membros de todas as igrejas desta regional (incluindo hospedeira)
         let totalMembros = 0;
-        const todasIgrejasDaRegional = [regData.hospedeiraId, ...igrejasPertencentes.map((u) => u.id)];
+        const todasIgrejasDaRegional = [regData.hospedeiraId, ...igrejasPertencentes.map((u) => u.id)].filter(Boolean);
 
-        for (const unitId of todasIgrejasDaRegional) {
-          try {
-            const membrosRef = collection(db!, "igrejas", igrejaId, "unidades", unitId, "membros");
-            const snapshotMembros = await getDocs(membrosRef);
-            totalMembros += snapshotMembros.docs.filter((m) => m.data().ativo !== false).length;
-          } catch {
-            // Unidade vazia ou sem acesso
+        if (todasIgrejasDaRegional.length > 0) {
+          const { count, error: countErr } = await supabase
+            .from("membros")
+            .select("*", { count: "exact", head: true })
+            .in("unidade_id", todasIgrejasDaRegional)
+            .eq("situacao", "ativo");
+          if (!countErr && count !== null) {
+            totalMembros = count;
           }
         }
 
@@ -129,13 +139,15 @@ export default function RegionaisPage() {
       }
 
       setRegionais(regionaisList);
+    } catch (err) {
+      console.error("Erro ao carregar regionais:", err);
+    } finally {
       setLoading(false);
-    });
+    }
+  };
 
-    return () => {
-      unsubUnidades();
-      unsubRegionais();
-    };
+  useEffect(() => {
+    loadRegionaisData();
   }, [igrejaId]);
 
   const handleDelete = async () => {
@@ -143,10 +155,16 @@ export default function RegionaisPage() {
 
     try {
       setDeleting(true);
-      const docRef = doc(db!, "igrejas", igrejaId, "regionais_setores", deleteId);
-      await deleteDoc(docRef);
+      const { error } = await supabase
+        .from("regionais_setores")
+        .delete()
+        .eq("id", deleteId);
+
+      if (error) throw error;
+
       toast.success("Regional/Setor removida com sucesso!");
       setDeleteId(null);
+      loadRegionaisData();
     } catch (error) {
       console.error("Erro ao remover:", error);
       toast.error("Erro ao remover regional/setor.");

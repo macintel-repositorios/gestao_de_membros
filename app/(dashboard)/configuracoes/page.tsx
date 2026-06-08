@@ -2,17 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  doc,
-  updateDoc,
-  getDocs,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getUsuariosCollection, getGruposCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,58 +54,76 @@ export default function ConfiguracoesPage() {
   }, [usuario, router]);
 
   // Load users and groups
-  useEffect(() => {
+  const loadConfigData = async () => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
       setLoading(false);
       return;
     }
 
-    // Users are stored under the church
-    const usersRef = getUsuariosCollection(igrejaId);
-    const q = query(usersRef, orderBy("dataCriacao", "desc"));
+    try {
+      // Load users
+      const { data: usersData, error: usersErr } = await supabase
+        .from("usuarios")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .order("data_criacao", { ascending: false });
 
-    const unsubscribeUsers = onSnapshot(q, (snapshot) => {
-      const usersData: Usuario[] = [];
-      snapshot.forEach((docSnap) => {
-        const userData = { uid: docSnap.id, ...docSnap.data() } as Usuario;
-        usersData.push(userData);
-      });
-      setUsuarios(usersData);
-      setLoading(false);
-    });
+      if (usersErr) throw usersErr;
 
-    // Load grupos from accessible units
-    const loadGrupos = async () => {
-      try {
-        const gruposData: Grupo[] = [];
-        
-        for (const uId of unidadesAcessiveis) {
-          const gruposRef = getGruposCollection(igrejaId, uId);
-          const snapshot = await getDocs(gruposRef);
-          snapshot.forEach((docSnap) => {
-            gruposData.push({ id: docSnap.id, unidadeId: uId, ...docSnap.data() } as unknown as Grupo);
-          });
-        }
-        
-        setGrupos(gruposData);
-      } catch (error) {
-        console.error("Erro ao carregar grupos:", error);
+      setUsuarios((usersData || []).map(u => ({
+        uid: u.id,
+        nome: u.nome,
+        telefone: u.telefone || "",
+        email: u.email,
+        nivelAcesso: u.nivel_acesso as NivelAcesso,
+        igrejaId: u.igreja_id,
+        unidadeId: u.unidade_id,
+        ativo: u.ativo,
+        dataCriacao: u.data_criacao,
+      })));
+
+      // Load groups
+      const { data: grpsData, error: grpsErr } = await supabase
+        .from("grupos")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesAcessiveis);
+
+      if (!grpsErr && grpsData) {
+        setGrupos(grpsData.map(g => ({
+          id: g.id,
+          nome: g.nome,
+          tipo: g.tipo,
+          liderUid: g.lider_uid,
+          membrosIds: g.membros_ids,
+          linkWhatsApp: g.link_whatsapp,
+          ativo: g.ativo,
+          dataCriacao: g.data_criacao,
+        })) as any);
       }
-    };
-    
-    loadGrupos();
+    } catch (error) {
+      console.error("Erro ao carregar dados de configuração:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      unsubscribeUsers();
-    };
+  useEffect(() => {
+    loadConfigData();
   }, [igrejaId, unidadesAcessiveis]);
 
   const handleChangeAccess = async (uid: string, novoNivel: NivelAcesso) => {
     try {
-      await updateDoc(doc(db, "usuarios", uid), {
-        nivelAcesso: novoNivel,
-      });
+      const { error } = await supabase
+        .from("usuarios")
+        .update({
+          nivel_acesso: novoNivel,
+        })
+        .eq("id", uid);
+
+      if (error) throw error;
       toast.success("Nível de acesso atualizado");
+      loadConfigData();
     } catch (error) {
       console.error("Erro ao atualizar acesso:", error);
       toast.error("Erro ao atualizar nível de acesso");
@@ -124,10 +132,16 @@ export default function ConfiguracoesPage() {
 
   const handleAssignGroup = async (uid: string, grupoId: string | null) => {
     try {
-      await updateDoc(doc(db, "usuarios", uid), {
-        grupoId: grupoId || null,
-      });
+      const { error } = await supabase
+        .from("usuarios")
+        .update({
+          grupo_id: grupoId || null,
+        })
+        .eq("id", uid);
+
+      if (error) throw error;
       toast.success(grupoId ? "Grupo atribuído ao líder" : "Grupo removido do líder");
+      loadConfigData();
     } catch (error) {
       console.error("Erro ao atribuir grupo:", error);
       toast.error("Erro ao atribuir grupo");
@@ -138,11 +152,17 @@ export default function ConfiguracoesPage() {
     if (!userToDeactivate) return;
 
     try {
-      await updateDoc(doc(db, "usuarios", userToDeactivate.uid), {
-        ativo: false,
-      });
+      const { error } = await supabase
+        .from("usuarios")
+        .update({
+          ativo: false,
+        })
+        .eq("id", userToDeactivate.uid);
+
+      if (error) throw error;
       toast.success("Usuário desativado com sucesso");
       setUserToDeactivate(null);
+      loadConfigData();
     } catch (error) {
       console.error("Erro ao desativar usuário:", error);
       toast.error("Erro ao desativar usuário");
@@ -152,16 +172,15 @@ export default function ConfiguracoesPage() {
   const formatPhone = (phone: string | null) => {
     if (!phone) return "-";
     const digits = phone.replace(/\D/g, "");
-    if (digits.length === 13) {
-      // +55 + 11 digits
-      return `(${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+    if (digits.length === 11) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
     return phone;
   };
 
-  const formatDate = (timestamp: { toDate: () => Date } | undefined) => {
-    if (!timestamp) return "-";
-    return timestamp.toDate().toLocaleDateString("pt-BR");
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return "-";
+    return new Date(dateString).toLocaleDateString("pt-BR");
   };
 
   const getNivelBadgeVariant = (nivel: NivelAcesso) => {

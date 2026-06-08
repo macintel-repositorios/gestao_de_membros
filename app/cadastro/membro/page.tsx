@@ -2,8 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { addDoc, Timestamp, collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,38 +105,42 @@ function CadastroMembroContent() {
   // Carrega informações da igreja
   useEffect(() => {
     async function loadIgreja() {
-      if (!igrejaId || !db) {
+      if (!igrejaId) {
         setLoadingIgreja(false);
         return;
       }
 
       try {
         // Busca dados da igreja
-        const igrejaRef = doc(db, "igrejas", igrejaId);
-        const igrejaSnap = await getDoc(igrejaRef);
+        const { data: igrejaData, error: igrejaErr } = await supabase
+          .from("igrejas")
+          .select("*")
+          .eq("id", igrejaId)
+          .single();
         
-        if (igrejaSnap.exists()) {
-          const data = igrejaSnap.data();
+        if (igrejaErr) throw igrejaErr;
+        
+        if (igrejaData) {
           setIgrejaInfo({
-            nome: data.nome || "Igreja",
-            convencao: data.convencao,
+            nome: igrejaData.nome || "Igreja",
+            convencao: igrejaData.convencao,
           });
         }
 
         // Busca unidades
-        const unidadesRef = collection(db, "igrejas", igrejaId, "unidades");
-        const unidadesSnap = await getDocs(unidadesRef);
+        const { data: unidadesData, error: unidadesErr } = await supabase
+          .from("unidades")
+          .select("id, nome, ativa")
+          .eq("igreja_id", igrejaId);
+          
+        if (unidadesErr) throw unidadesErr;
         
-        const unidadesList: UnidadeSimples[] = [];
-        unidadesSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.ativa !== false) {
-            unidadesList.push({
-              id: docSnap.id,
-              nome: data.nome || "Sem nome",
-            });
-          }
-        });
+        const unidadesList: UnidadeSimples[] = (unidadesData || [])
+          .filter((u) => u.ativa !== false)
+          .map((u) => ({
+            id: u.id,
+            nome: u.nome || "Sem nome",
+          }));
         
         setUnidades(unidadesList);
         
@@ -155,53 +159,49 @@ function CadastroMembroContent() {
         // Se veio o parâmetro membro, carrega as informações do membro para edição
         const membroIdParam = searchParams.get("membro");
         if (membroIdParam) {
-          const uId = unidadeIdParam || (unidadesList.length === 1 ? unidadesList[0].id : "");
-          if (uId) {
-            const memberRef = doc(db, "igrejas", igrejaId, "unidades", uId, "membros", membroIdParam);
-            const memberSnap = await getDoc(memberRef);
-            if (memberSnap.exists()) {
-              const data = memberSnap.data();
-              setMembroId(membroIdParam);
-              setIsEditMode(true);
-              setUnidadeId(uId);
-              setNome(data.nome || "");
-              setTelefone(data.telefone || "");
-              setEmail(data.email || "");
-              setSexo(data.sexo || "");
-              
-              if (data.dataNascimento) {
-                const date = data.dataNascimento.toDate();
-                const yyyy = date.getFullYear();
-                const mm = String(date.getMonth() + 1).padStart(2, '0');
-                const dd = String(date.getDate()).padStart(2, '0');
-                setDataNascimento(`${yyyy}-${mm}-${dd}`);
-              } else {
-                setDataNascimento("");
-              }
-              
-              setTipo(data.tipo || "congregado");
-              setCargo(data.cargo || "");
-              setCargoDescricao(data.cargoDescricao || "");
-              setBatizado(!!data.dataBatismo);
-              setFoto(data.fotoUrl || null);
-              setEstadoCivil(data.estadoCivil || "solteiro");
-              setObservacoes(data.observacoes || "");
-              
-              if (data.endereco) {
-                setCep(data.endereco.cep || "");
-                setLogradouro(data.endereco.logradouro || "");
-                setNumero(data.endereco.numero || "");
-                setComplemento(data.endereco.complemento || "");
-                setBairro(data.endereco.bairro || "");
-                setCidade(data.endereco.cidade || "");
-                setEstado(data.endereco.estado || "");
-              }
-              
-              if (data.coordenadas) {
-                setCoordenadas(data.coordenadas);
-              }
-              setMostrarAdicionais(true);
+          const { data: memberData, error: memberErr } = await supabase
+            .from("membros")
+            .select("*")
+            .eq("id", membroIdParam)
+            .single();
+            
+          if (memberErr) throw memberErr;
+
+          if (memberData) {
+            setMembroId(membroIdParam);
+            setIsEditMode(true);
+            setUnidadeId(memberData.unidade_id || "");
+            setNome(memberData.nome || "");
+            setTelefone(memberData.telefone || "");
+            setEmail(memberData.email || "");
+            setSexo(memberData.sexo || "");
+            
+            if (memberData.data_nascimento) {
+              setDataNascimento(memberData.data_nascimento);
+            } else {
+              setDataNascimento("");
             }
+            
+            setTipo(memberData.tipo || "congregado");
+            setCargo(memberData.cargo || "");
+            setCargoDescricao(memberData.cargo_descricao || "");
+            setBatizado(!!memberData.data_batismo);
+            setFoto(memberData.foto_url || null);
+            setEstadoCivil(memberData.estado_civil || "solteiro");
+            setObservacoes(memberData.observacoes || "");
+            
+            setCep(memberData.cep || "");
+            setLogradouro(memberData.logradouro || "");
+            setNumero(memberData.numero || "");
+            setComplemento(memberData.complemento || "");
+            setBairro(memberData.bairro || "");
+            setCidade(memberData.cidade || "");
+            setEstado(memberData.estado || "");
+            
+            if (memberData.latitude && memberData.longitude) {
+              setCoordenadas({ lat: memberData.latitude, lng: memberData.longitude });
+            }
+            setMostrarAdicionais(true);
           }
         }
       } catch (error) {
@@ -217,25 +217,25 @@ function CadastroMembroContent() {
   // Carrega membros quando usuário indica que cônjuge é membro
   useEffect(() => {
     async function loadMembros() {
-      if (!conjugeEhMembro || !igrejaId || !unidadeId || !db) return;
+      if (!conjugeEhMembro || !igrejaId || !unidadeId) return;
       
       setLoadingMembros(true);
       try {
-        const membrosRef = collection(db, "igrejas", igrejaId, "unidades", unidadeId, "membros");
-        const membrosSnap = await getDocs(membrosRef);
+        const { data: membrosData, error: membrosErr } = await supabase
+          .from("membros")
+          .select("id, nome, telefone, sexo, situacao")
+          .eq("igreja_id", igrejaId)
+          .eq("unidade_id", unidadeId)
+          .eq("situacao", "ativo");
+          
+        if (membrosErr) throw membrosErr;
         
-        const lista: Pick<Membro, 'id' | 'nome' | 'telefone' | 'sexo'>[] = [];
-        membrosSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.ativo !== false) {
-            lista.push({
-              id: docSnap.id,
-              nome: data.nome || "",
-              telefone: data.telefone || "",
-              sexo: data.sexo || "",
-            });
-          }
-        });
+        const lista = (membrosData || []).map((row) => ({
+          id: row.id,
+          nome: row.nome || "",
+          telefone: row.telefone || "",
+          sexo: row.sexo || "",
+        }));
         
         // Ordena por nome
         lista.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -248,7 +248,7 @@ function CadastroMembroContent() {
     }
     
     loadMembros();
-  }, [conjugeEhMembro, igrejaId, unidadeId, db]);
+  }, [conjugeEhMembro, igrejaId, unidadeId]);
 
   const formatPhoneInput = (value: string) => {
     return value.replace(/\D/g, "").slice(0, 11);
@@ -339,7 +339,7 @@ function CadastroMembroContent() {
       toast.error("Selecione uma unidade");
       return;
     }
-    if (!igrejaId || !db) {
+    if (!igrejaId) {
       toast.error("Link inválido");
       return;
     }
@@ -374,154 +374,130 @@ function CadastroMembroContent() {
 
     setLoading(true);
     try {
-      const membrosRef = collection(db, "igrejas", igrejaId, "unidades", unidadeId, "membros");
+      // Determina nome e ID do cônjuge
+      let nomeConjugeFinal: string | null = null;
+      let conjugeIdFinal: string | null = null;
       
-      const membroData: Record<string, unknown> = {
-        nome: nome.trim(),
-        telefone: telefone.replace(/\D/g, ""),
-        tipo,
-        ativo: true,
-        dataCadastro: Timestamp.now(),
-        criadoPor: "formulario_publico",
-        unidadeId,
-      };
-
-      if (foto) {
-        membroData.fotoUrl = foto;
-      }
-
-      if (email.trim()) {
-        membroData.email = email.trim().toLowerCase();
-      }
-      if (sexo) {
-        membroData.sexo = sexo;
-      }
-      if (dataNascimento) {
-        membroData.dataNascimento = Timestamp.fromDate(new Date(dataNascimento));
-      }
-      if (observacoes.trim()) {
-        membroData.observacoes = observacoes.trim();
-      }
-
-      // Estado Civil e Cônjuge
-      membroData.estadoCivil = estadoCivil;
       if (temConjuge) {
-        // Se selecionou um cônjuge existente
         if (conjugeEhMembro && conjugeIdSelecionado) {
           const conjugeSelecionado = membrosLista.find(m => m.id === conjugeIdSelecionado);
-          membroData.nomeConjuge = conjugeSelecionado?.nome || "";
-          membroData.conjugeId = conjugeIdSelecionado;
+          nomeConjugeFinal = conjugeSelecionado?.nome || "";
+          conjugeIdFinal = conjugeIdSelecionado;
         } else if (nomeConjuge.trim()) {
-          membroData.nomeConjuge = nomeConjuge.trim();
+          nomeConjugeFinal = nomeConjuge.trim();
         }
       }
 
       // Cargo (para obreiro/líder)
       const showCargo = tipo === "obreiro" || tipo === "lider";
-      if (showCargo && cargo) {
-        membroData.cargo = cargo;
-        if (cargo === "outro" && cargoDescricao.trim()) {
-          membroData.cargoDescricao = cargoDescricao.trim();
-        }
-      }
 
-      // Batizado
-      if (batizado) {
-        membroData.dataBatismo = Timestamp.now(); // Marca como batizado
-      }
-
-      // Endereço no formato correto (objeto)
-      if (cep || logradouro || cidade) {
-        membroData.endereco = {
-          cep: cep || "",
-          logradouro: logradouro || "",
-          numero: numero || "",
-          complemento: complemento || "",
-          bairro: bairro || "",
-          cidade: cidade || "",
-          estado: estado || "",
-        };
-      }
-
-      // Coordenadas para o mapa
-      if (coordenadas) {
-        membroData.coordenadas = coordenadas;
-      }
+      const membroPayload = {
+        nome: nome.trim(),
+        telefone: telefone.replace(/\D/g, ""),
+        tipo,
+        situacao: "ativo",
+        igreja_id: igrejaId,
+        unidade_id: unidadeId,
+        foto_url: foto || null,
+        email: email.trim().toLowerCase() || null,
+        sexo: sexo || null,
+        data_nascimento: dataNascimento || null,
+        observacoes: observacoes.trim() || null,
+        estado_civil: estadoCivil,
+        nome_conjuge: nomeConjugeFinal,
+        conjuge_id: conjugeIdFinal,
+        cargo: showCargo ? (cargo || null) : null,
+        cargo_descricao: showCargo && cargo === "outro" ? (cargoDescricao.trim() || null) : null,
+        data_batismo: batizado ? format(new Date(), "yyyy-MM-dd") : null,
+        cep: cep || null,
+        logradouro: logradouro || null,
+        numero: numero || null,
+        complemento: complemento || null,
+        bairro: bairro || null,
+        cidade: cidade || null,
+        estado: estado || null,
+        latitude: coordenadas?.lat || null,
+        longitude: coordenadas?.lng || null,
+      };
 
       // Primeiro cadastra ou atualiza o membro principal
-      let membroPrincipalRef;
+      let memberIdFinal = membroId;
       if (isEditMode && membroId) {
-        const docRef = doc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", membroId);
-        await updateDoc(docRef, membroData as any);
-        membroPrincipalRef = { id: membroId };
+        const { error } = await supabase
+          .from("membros")
+          .update(membroPayload)
+          .eq("id", membroId);
+          
+        if (error) throw error;
       } else {
-        membroPrincipalRef = await addDoc(membrosRef, membroData);
+        const { data: newMemb, error } = await supabase
+          .from("membros")
+          .insert({
+            ...membroPayload,
+            data_cadastro: format(new Date(), "yyyy-MM-dd"),
+          })
+          .select("id")
+          .single();
+          
+        if (error) throw error;
+        memberIdFinal = newMemb.id;
       }
       
-      const { updateDoc: fbUpdateDoc, doc: fbDoc } = await import("firebase/firestore");
-      
       // Se selecionou um cônjuge existente, atualiza ambos os registros
-      if (temConjuge && conjugeEhMembro && conjugeIdSelecionado) {
-        // Atualiza o cônjuge existente para vincular ao novo membro
-        await fbUpdateDoc(fbDoc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", conjugeIdSelecionado), {
-          conjugeId: membroPrincipalRef.id,
-          nomeConjuge: nome.trim(),
-        });
+      if (temConjuge && conjugeEhMembro && conjugeIdSelecionado && memberIdFinal) {
+        await supabase
+          .from("membros")
+          .update({
+            conjuge_id: memberIdFinal,
+            nome_conjuge: nome.trim(),
+          })
+          .eq("id", conjugeIdSelecionado);
       }
       
       // Se for para cadastrar um novo cônjuge (não está na lista)
-      if (temConjuge && conjugeEhMembro && adicionarNovoConjuge && nomeConjuge.trim() && telefoneConjuge.trim()) {
-        const conjugeData: Record<string, unknown> = {
+      if (temConjuge && conjugeEhMembro && adicionarNovoConjuge && nomeConjuge.trim() && telefoneConjuge.trim() && memberIdFinal) {
+        const conjugePayload = {
           nome: nomeConjuge.trim(),
           telefone: telefoneConjuge.replace(/\D/g, ""),
-          tipo: tipoConjuge, // Tipo selecionado para o cônjuge
-          ativo: true,
-          dataCadastro: Timestamp.now(),
-          criadoPor: "formulario_publico",
-          unidadeId,
-          estadoCivil, // Mesmo estado civil
-          nomeConjuge: nome.trim(), // O nome do membro principal é o cônjuge do cônjuge
-          conjugeId: membroPrincipalRef.id, // Vincula ao membro principal
+          tipo: tipoConjuge,
+          situacao: "ativo",
+          data_cadastro: format(new Date(), "yyyy-MM-dd"),
+          unidade_id: unidadeId,
+          igreja_id: igrejaId,
+          estado_civil: estadoCivil,
+          nome_conjuge: nome.trim(),
+          conjuge_id: memberIdFinal,
+          cargo: showCargoConjuge ? (cargoConjuge || null) : null,
+          email: emailConjuge.trim().toLowerCase() || null,
+          sexo: sexoConjuge || null,
+          data_nascimento: dataNascimentoConjuge || null,
+          cep: cep || null,
+          logradouro: logradouro || null,
+          numero: numero || null,
+          complemento: complemento || null,
+          bairro: bairro || null,
+          cidade: cidade || null,
+          estado: estado || null,
+          latitude: coordenadas?.lat || null,
+          longitude: coordenadas?.lng || null,
         };
         
-        // Cargo (se obreiro/líder)
-        if (showCargoConjuge && cargoConjuge) {
-          conjugeData.cargo = cargoConjuge;
-        }
-        
-        if (emailConjuge.trim()) {
-          conjugeData.email = emailConjuge.trim().toLowerCase();
-        }
-        if (sexoConjuge) {
-          conjugeData.sexo = sexoConjuge;
-        }
-        if (dataNascimentoConjuge) {
-          conjugeData.dataNascimento = Timestamp.fromDate(new Date(dataNascimentoConjuge));
-        }
-        
-        // Usa o mesmo endereço
-        if (cep || logradouro || cidade) {
-          conjugeData.endereco = {
-            cep: cep || "",
-            logradouro: logradouro || "",
-            numero: numero || "",
-            complemento: complemento || "",
-            bairro: bairro || "",
-            cidade: cidade || "",
-            estado: estado || "",
-          };
-        }
-        if (coordenadas) {
-          conjugeData.coordenadas = coordenadas;
-        }
-        
         // Cadastra o cônjuge
-        const conjugeRef = await addDoc(membrosRef, conjugeData);
+        const { data: newConj, error: conjErr } = await supabase
+          .from("membros")
+          .insert(conjugePayload)
+          .select("id")
+          .single();
+          
+        if (conjErr) throw conjErr;
         
         // Atualiza o membro principal com o ID do cônjuge
-        await updateDoc(doc(db, "igrejas", igrejaId, "unidades", unidadeId, "membros", membroPrincipalRef.id), {
-          conjugeId: conjugeRef.id
-        });
+        await supabase
+          .from("membros")
+          .update({
+            conjuge_id: newConj.id
+          })
+          .eq("id", memberIdFinal);
       }
       
       setSuccess(true);

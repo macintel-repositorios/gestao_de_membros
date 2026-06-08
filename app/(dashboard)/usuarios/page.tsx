@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, doc, deleteDoc, updateDoc, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Usuario, NIVEIS_ACESSO, Unidade } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,18 +76,24 @@ export default function UsuariosPage() {
     }
 
     try {
-      const usuariosRef = collection(db!, "usuarios");
-      const q = query(usuariosRef, where("igrejaId", "==", igrejaId));
-      const snapshot = await getDocs(q);
+      const { data, error } = await supabase
+        .from("usuarios")
+        .select("*")
+        .eq("igreja_id", igrejaId);
       
-      const usuariosData: Usuario[] = [];
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-        usuariosData.push({
-          uid: docSnap.id,
-          ...data,
-        } as Usuario);
-      });
+      if (error) throw error;
+      
+      const usuariosData: Usuario[] = (data || []).map(usr => ({
+        uid: usr.id,
+        nome: usr.nome,
+        telefone: usr.telefone || "",
+        email: usr.email,
+        nivelAcesso: usr.nivel_acesso as any,
+        igrejaId: usr.igreja_id,
+        unidadeId: usr.unidade_id,
+        ativo: usr.ativo,
+        dataCriacao: usr.data_criacao,
+      }));
       
       setUsuarios(usuariosData);
     } catch (error) {
@@ -110,8 +115,12 @@ export default function UsuariosPage() {
 
   const handleToggleAtivo = async (usr: Usuario) => {
     try {
-      const userRef = doc(db, "usuarios", usr.uid);
-      await updateDoc(userRef, { ativo: !usr.ativo });
+      const { error } = await supabase
+        .from("usuarios")
+        .update({ ativo: !usr.ativo })
+        .eq("id", usr.uid);
+      
+      if (error) throw error;
       
       setUsuarios(prev => prev.map(u => 
         u.uid === usr.uid ? { ...u, ativo: !u.ativo } : u
@@ -128,7 +137,13 @@ export default function UsuariosPage() {
     if (!deleteId) return;
 
     try {
-      await deleteDoc(doc(db, "usuarios", deleteId));
+      const { error } = await supabase
+        .from("usuarios")
+        .delete()
+        .eq("id", deleteId);
+
+      if (error) throw error;
+
       setUsuarios(prev => prev.filter(u => u.uid !== deleteId));
       toast.success("Usuário removido com sucesso");
     } catch (error) {

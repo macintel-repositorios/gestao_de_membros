@@ -34,7 +34,7 @@ export default function DashboardLayout({
     }
   }, [user, igrejaId, loading, isConfigured, router]);
 
-  // Show setup page if Firebase is not configured
+  // Show setup page if Supabase is not configured
   if (!isConfigured) {
     return <SetupRequired />;
   }

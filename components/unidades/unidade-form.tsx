@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, getDoc, updateDoc, addDoc, Timestamp, query, onSnapshot, orderBy, collection, deleteDoc, setDoc, query as fsQuery, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getUnidadesCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +48,6 @@ interface UnidadeFormProps {
 
 export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuccess, onCancel }: UnidadeFormProps) {
   const { usuario, igrejaId, nivelAcesso } = useAuth();
-  const [loading, setLoading] = useState(false);
   const [loadingUnidade, setLoadingUnidade] = useState(!!unidadeId);
   const [saving, setSaving] = useState(false);
   const [unidadesExistentes, setUnidadesExistentes] = useState<Unidade[]>([]);
@@ -108,16 +105,23 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
   useEffect(() => {
     if (!igrejaId) return;
 
-    const regionaisRef = collection(db!, "igrejas", igrejaId, "regionais_setores");
-    const unsubscribe = onSnapshot(regionaisRef, (snapshot) => {
-      const data: RegionalSetor[] = [];
-      snapshot.forEach((docSnap) => {
-        data.push({ id: docSnap.id, ...docSnap.data() } as RegionalSetor);
-      });
-      setRegionaisSetores(data);
-    });
+    const carregarRegionais = async () => {
+      const { data, error } = await supabase
+        .from("regionais_setores")
+        .select("*")
+        .eq("igreja_id", igrejaId);
+      if (!error && data) {
+        setRegionaisSetores(data.map(r => ({
+          id: r.id,
+          tipo: r.tipo,
+          numero: r.numero,
+          nome: r.nome,
+          hospedeiraId: r.hospedeira_id,
+        })) as any);
+      }
+    };
 
-    return () => unsubscribe();
+    carregarRegionais();
   }, [igrejaId]);
 
   // Carrega a unidade atual se for edição
@@ -129,38 +133,44 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
 
     const loadUnidade = async () => {
       try {
-        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", unidadeId);
-        const unidadeDoc = await getDoc(unidadeRef);
+        const { data, error } = await supabase
+          .from("unidades")
+          .select("*")
+          .eq("id", unidadeId)
+          .single();
+
+        if (error) throw error;
         
-        if (unidadeDoc.exists()) {
-          const data = unidadeDoc.data();
+        if (data) {
           setFormData({
             nome: data.nome || "",
             tipo: data.tipo || "",
-            unidadePaiId: data.unidadePaiId || "",
+            unidadePaiId: data.unidade_pai_id || "",
             dirigente: data.dirigente || "",
             telefone: data.telefone || "",
-            endereco: data.endereco || {
-              logradouro: "",
-              numero: "",
-              complemento: "",
-              bairro: "",
-              cidade: "",
-              estado: "",
-              cep: "",
+            endereco: {
+              logradouro: data.logradouro || "",
+              numero: data.numero || "",
+              complemento: data.complemento || "",
+              bairro: data.bairro || "",
+              cidade: data.cidade || "",
+              estado: data.estado || "",
+              cep: data.cep || "",
             },
           });
-          setFotoBase64(data.fotoUrl || null);
-          const isHosp = data.ehHospedeira || false;
+          setFotoBase64(data.foto_url || null);
+          const isHosp = data.eh_hospedeira || false;
           setEhHospedeira(isHosp);
-          setHospedaRegionalId(data.hospedaRegionalId || null);
-          setRegionalSetorId(data.regionalSetorId || null);
+          setHospedaRegionalId(data.regional_setor_id || null);
+          setRegionalSetorId(data.regional_setor_id || null);
 
-          if (isHosp && data.hospedaRegionalId) {
-            const regRef = doc(db!, "igrejas", igrejaId, "regionais_setores", data.hospedaRegionalId);
-            const regDoc = await getDoc(regRef);
-            if (regDoc.exists()) {
-              const regData = regDoc.data();
+          if (isHosp && data.regional_setor_id) {
+            const { data: regData, error: regErr } = await supabase
+              .from("regionais_setores")
+              .select("*")
+              .eq("id", data.regional_setor_id)
+              .single();
+            if (!regErr && regData) {
               setRegTipo(regData.tipo || "regional");
               setRegNumero(regData.numero || 1);
             }
@@ -168,21 +178,23 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
 
           // Carregar o administrador
           try {
-            const usuariosRef = collection(db!, "usuarios");
-            const q = query(usuariosRef, where("unidadeId", "==", unidadeId), where("nivelAcesso", "==", "admin"));
-            const userSnap = await getDocs(q);
-            if (!userSnap.empty) {
-              const adminDoc = userSnap.docs[0];
-              const adminData = adminDoc.data();
+            const { data: adminData, error: adminErr } = await supabase
+              .from("usuarios")
+              .select("*")
+              .eq("unidade_id", unidadeId)
+              .eq("nivel_acesso", "admin")
+              .limit(1)
+              .maybeSingle();
+
+            if (!adminErr && adminData) {
               setOriginalAdmin({
-                id: adminDoc.id,
+                id: adminData.id,
                 nome: adminData.nome || "",
                 telefone: adminData.telefone || "",
-                igrejaId: adminData.igrejaId,
-                unidadeId: adminData.unidadeId,
+                igrejaId: adminData.igreja_id,
+                unidadeId: adminData.unidade_id,
                 ativo: adminData.ativo,
-                dataCriacao: adminData.dataCriacao,
-                criadoPor: adminData.criadoPor,
+                dataCriacao: adminData.data_criacao,
               });
               setAdminNome(adminData.nome || "");
               setAdminTelefone(formatTelefone(adminData.telefone || ""));
@@ -190,8 +202,6 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           } catch (err) {
             console.error("Erro ao carregar administrador:", err);
           }
-        } else {
-          toast.error("Unidade não encontrada");
         }
       } catch (error) {
         console.error("Erro ao carregar unidade:", error);
@@ -208,54 +218,47 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
   useEffect(() => {
     if (!igrejaId) return;
 
-    const unidadesRef = getUnidadesCollection(igrejaId);
-    const q = query(unidadesRef, orderBy("nome", "asc"));
+    const carregarUnidades = async () => {
+      const { data, error } = await supabase
+        .from("unidades")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .order("nome", { ascending: true });
+      if (!error && data) {
+        setUnidadesExistentes(data.filter(u => u.id !== unidadeId).map(u => ({
+          id: u.id,
+          nome: u.nome,
+          tipo: u.tipo,
+        })) as any);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data: Unidade[] = [];
-      snapshot.forEach((docSnap) => {
-        if (docSnap.id !== unidadeId) {
-          data.push({ id: docSnap.id, ...docSnap.data() } as Unidade);
-        }
-      });
-      setUnidadesExistentes(data);
-    });
-
-    return () => unsubscribe();
+    carregarUnidades();
   }, [igrejaId, unidadeId]);
 
-  // Determina quais tipos podem ser criados baseado nas unidades existentes
   const tiposDisponiveis = (): TipoUnidade[] => {
     const hasSede = unidadesExistentes.some(u => u.tipo === "sede");
-    
-    // Se for edição, permite manter o tipo atual ou mudar para os tipos normais
     if (unidadeId) {
-      return ["sede", "congregacao", "subcongregacao"];
+      return ["sede", "congregacao", "subcongregacao", "ponto_evangelistico"];
     }
-
     if (!hasSede) {
       return ["sede"];
     }
-    
-    return ["congregacao", "subcongregacao"];
+    return ["congregacao", "subcongregacao", "ponto_evangelistico"];
   };
 
-  // Filtra unidades pai baseado no tipo selecionado
   const unidadesPai = (): Unidade[] => {
     if (!formData.tipo) return [];
-    
-    if (formData.tipo === "sede") {
-      return [];
-    }
-    
+    if (formData.tipo === "sede") return [];
     if (formData.tipo === "congregacao") {
       return unidadesExistentes.filter(u => u.tipo === "sede");
     }
-    
     if (formData.tipo === "subcongregacao") {
       return unidadesExistentes.filter(u => u.tipo === "sede" || u.tipo === "congregacao");
     }
-    
+    if (formData.tipo === "ponto_evangelistico") {
+      return unidadesExistentes.filter(u => u.tipo === "sede" || u.tipo === "congregacao" || u.tipo === "subcongregacao");
+    }
     return [];
   };
 
@@ -272,7 +275,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
       return;
     }
 
-    if ((formData.tipo === "congregacao" || formData.tipo === "subcongregacao") && !formData.unidadePaiId) {
+    if ((formData.tipo === "congregacao" || formData.tipo === "subcongregacao" || formData.tipo === "ponto_evangelistico") && !formData.unidadePaiId) {
       toast.error("Selecione a unidade pai");
       return;
     }
@@ -281,43 +284,65 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
       toast.error("O nome e telefone do administrador são obrigatórios.");
       return;
     }
-    const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-    if (adminPhoneDigits.length < 10) {
-      toast.error("Telefone do administrador inválido.");
-      return;
-    }
 
     setSaving(true);
-
     try {
-      const cleanNewPhone = adminTelefone.replace(/\D/g, "");
-      let finalUnidadeId = unidadeId;
+      let finalUnidadeId = unidadeId || "";
+
+      const payload = {
+        nome: formData.nome,
+        tipo: formData.tipo,
+        unidade_pai_id: formData.unidadePaiId || null,
+        dirigente: formData.dirigente || null,
+        telefone: formData.telefone || null,
+        cep: formData.endereco.cep || null,
+        logradouro: formData.endereco.logradouro || null,
+        numero: formData.endereco.numero || null,
+        complemento: formData.endereco.complemento || null,
+        bairro: formData.endereco.bairro || null,
+        cidade: formData.endereco.cidade || null,
+        estado: formData.endereco.estado || null,
+        foto_url: fotoBase64 || null,
+      };
 
       if (unidadeId) {
-        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", unidadeId);
-        await updateDoc(unidadeRef, {
-          nome: formData.nome,
-          tipo: formData.tipo,
-          unidadePaiId: formData.unidadePaiId || null,
-          dirigente: formData.dirigente || null,
-          telefone: formData.telefone || null,
-          endereco: formData.endereco.logradouro ? formData.endereco : null,
-          fotoUrl: fotoBase64 || null,
-          dataAtualizacao: Timestamp.now(),
-        });
+        const { error } = await supabase
+          .from("unidades")
+          .update(payload)
+          .eq("id", unidadeId);
+        if (error) throw error;
+
+        // Se for do tipo sede, sincroniza com a tabela de igrejas (tenant)
+        if (formData.tipo === "sede") {
+          await supabase
+            .from("igrejas")
+            .update({
+              nome: formData.nome,
+              dirigente: formData.dirigente || null,
+              telefone: formData.telefone.replace(/\D/g, "") || null,
+              cep: formData.endereco.cep.replace(/\D/g, "") || null,
+              logradouro: formData.endereco.logradouro || null,
+              numero: formData.endereco.numero || null,
+              complemento: formData.endereco.complemento || null,
+              bairro: formData.endereco.bairro || null,
+              cidade: formData.endereco.cidade || null,
+              estado: formData.endereco.estado || null,
+              foto_url: fotoBase64 || null,
+            })
+            .eq("id", igrejaId);
+        }
       } else {
-        const docRef = await addDoc(getUnidadesCollection(igrejaId), {
-          nome: formData.nome,
-          tipo: formData.tipo,
-          unidadePaiId: formData.unidadePaiId || null,
-          dirigente: formData.dirigente || null,
-          telefone: formData.telefone || null,
-          endereco: formData.endereco.logradouro ? formData.endereco : null,
-          fotoUrl: fotoBase64 || null,
-          ativa: true,
-          dataCriacao: Timestamp.now(),
-        });
-        finalUnidadeId = docRef.id;
+        const { data: newUnit, error } = await supabase
+          .from("unidades")
+          .insert({
+            ...payload,
+            igreja_id: igrejaId,
+            ativa: true,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        finalUnidadeId = newUnit.id;
       }
 
       const labelTipo = regTipo === "regional" ? "Regional" : "Setor";
@@ -327,178 +352,71 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
         let currentRegId = hospedaRegionalId;
         
         if (currentRegId) {
-          const regRef = doc(db!, "igrejas", igrejaId, "regionais_setores", currentRegId);
-          await updateDoc(regRef, {
-            tipo: regTipo,
-            numero: regNumero,
-            nome: regNome,
-            hospedeiraId: finalUnidadeId,
-            dirigente: formData.dirigente || null,
-          });
+          await supabase
+            .from("regionais_setores")
+            .update({
+              tipo: regTipo,
+              numero: regNumero,
+              nome: regNome,
+              hospedeira_id: finalUnidadeId,
+              dirigente: formData.dirigente || null,
+            })
+            .eq("id", currentRegId);
         } else {
-          const regCollectionRef = collection(db!, "igrejas", igrejaId, "regionais_setores");
-          const regDocRef = await addDoc(regCollectionRef, {
-            tipo: regTipo,
-            numero: regNumero,
-            nome: regNome,
-            hospedeiraId: finalUnidadeId,
-            dirigente: formData.dirigente || null,
-            igrejasMembrosIds: [],
-            dataCriacao: Timestamp.now(),
-          });
-          currentRegId = regDocRef.id;
+          const { data: newReg, error: regError } = await supabase
+            .from("regionais_setores")
+            .insert({
+              igreja_id: igrejaId,
+              tipo: regTipo,
+              numero: regNumero,
+              nome: regNome,
+              hospedeira_id: finalUnidadeId,
+              dirigente: formData.dirigente || null,
+            })
+            .select()
+            .single();
+          if (!regError && newReg) {
+            currentRegId = newReg.id;
+          }
         }
 
-        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", finalUnidadeId);
-        await updateDoc(unidadeRef, {
-          ehHospedeira: true,
-          hospedaRegionalId: currentRegId,
-          regionalSetorId: currentRegId,
-        });
+        await supabase
+          .from("unidades")
+          .update({
+            eh_hospedeira: true,
+            regional_setor_id: currentRegId,
+          })
+          .eq("id", finalUnidadeId);
 
       } else {
         if (hospedaRegionalId) {
-          const oldRegRef = doc(db!, "igrejas", igrejaId, "regionais_setores", hospedaRegionalId);
-          await deleteDoc(oldRegRef);
+          await supabase
+            .from("regionais_setores")
+            .delete()
+            .eq("id", hospedaRegionalId);
         }
 
-        const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", finalUnidadeId);
-        await updateDoc(unidadeRef, {
-          ehHospedeira: false,
-          hospedaRegionalId: null,
-          regionalSetorId: regionalSetorId || null,
-        });
+        await supabase
+          .from("unidades")
+          .update({
+            eh_hospedeira: false,
+            regional_setor_id: regionalSetorId || null,
+          })
+          .eq("id", finalUnidadeId);
       }
 
-      if (!unidadeId) {
-        const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-        const adminUserId = `+55${adminPhoneDigits}`;
-        
-        // Verifica se já existe um usuário com esse telefone no banco
-        const qRef = fsQuery(collection(db!, "usuarios"), where("telefone", "==", adminTelefone));
-        const userSnapshot = await getDocs(qRef);
-
-        if (!userSnapshot.empty) {
-          // Atualiza usuário existente para ser o admin da nova unidade
-          const existingUserDoc = userSnapshot.docs[0];
-          const userRef = doc(db!, "usuarios", existingUserDoc.id);
-          await updateDoc(userRef, {
+      // Se for edição, atualiza os dados do administrador
+      if (originalAdmin) {
+        await supabase
+          .from("usuarios")
+          .update({
             nome: adminNome.trim(),
-            nivelAcesso: "admin",
-            igrejaId: igrejaId,
-            unidadeId: finalUnidadeId,
-            ativo: true,
-            dataAtualizacao: Timestamp.now()
-          });
-        } else {
-          // Cria novo pré-cadastro
-          const userRef = doc(db!, "usuarios", adminUserId);
-          await setDoc(userRef, {
-            telefone: adminTelefone,
-            nome: adminNome.trim(),
-            nivelAcesso: "admin",
-            igrejaId: igrejaId,
-            unidadeId: finalUnidadeId,
-            ativo: true,
-            dataCriacao: Timestamp.now(),
-            criadoPor: usuario?.uid || null,
-          });
-        }
-      } else {
-        if (originalAdmin) {
-          const cleanNewPhone = adminTelefone.replace(/\D/g, "");
-          const cleanOldPhone = originalAdmin.telefone.replace(/\D/g, "");
-          
-          if (cleanNewPhone === cleanOldPhone) {
-            // Apenas atualiza o nome do administrador existente
-            const userRef = doc(db!, "usuarios", originalAdmin.id);
-            await updateDoc(userRef, {
-              nome: adminNome.trim(),
-              dataAtualizacao: Timestamp.now(),
-            });
-          } else {
-            // O telefone mudou: verifica se o novo telefone já existe no banco
-            const qRef = fsQuery(collection(db!, "usuarios"), where("telefone", "==", adminTelefone));
-            const userSnapshot = await getDocs(qRef);
-
-            if (!userSnapshot.empty) {
-              // Se o novo telefone já existe, atualiza ele e remove o antigo
-              const existingUserDoc = userSnapshot.docs[0];
-              const userRef = doc(db!, "usuarios", existingUserDoc.id);
-              await updateDoc(userRef, {
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: originalAdmin.igrejaId || igrejaId || null,
-                unidadeId: originalAdmin.unidadeId || finalUnidadeId || null,
-                ativo: true,
-                dataAtualizacao: Timestamp.now()
-              });
-
-              // Deleta o registro originalAdmin antigo
-              const oldAdminDocRef = doc(db!, "usuarios", originalAdmin.id);
-              await deleteDoc(oldAdminDocRef);
-            } else {
-              // Se não existe, cria novo pré-cadastro e remove o antigo
-              const cleanNewPhoneWithPrefix = `+55${cleanNewPhone}`;
-              const newAdminDocRef = doc(db!, "usuarios", cleanNewPhoneWithPrefix);
-              
-              await setDoc(newAdminDocRef, {
-                telefone: adminTelefone,
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: originalAdmin.igrejaId || igrejaId || null,
-                unidadeId: originalAdmin.unidadeId || finalUnidadeId || null,
-                ativo: originalAdmin.ativo !== undefined ? originalAdmin.ativo : true,
-                dataCriacao: originalAdmin.dataCriacao || Timestamp.now(),
-                criadoPor: originalAdmin.criadoPor || usuario?.uid || null,
-                dataAtualizacao: Timestamp.now(),
-              });
-
-              const oldAdminDocRef = doc(db!, "usuarios", originalAdmin.id);
-              await deleteDoc(oldAdminDocRef);
-            }
-          }
-        } else {
-          // Se não havia administrador cadastrado anteriormente, mas o usuário digitou agora
-          if (adminNome.trim() && adminTelefone.trim()) {
-            const adminPhoneDigits = adminTelefone.replace(/\D/g, "");
-            const adminUserId = `+55${adminPhoneDigits}`;
-            
-            // Verifica se o telefone já existe no banco
-            const qRef = fsQuery(collection(db!, "usuarios"), where("telefone", "==", adminTelefone));
-            const userSnapshot = await getDocs(qRef);
-
-            if (!userSnapshot.empty) {
-              // Atualiza o existente
-              const existingUserDoc = userSnapshot.docs[0];
-              const userRef = doc(db!, "usuarios", existingUserDoc.id);
-              await updateDoc(userRef, {
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: igrejaId,
-                unidadeId: finalUnidadeId,
-                ativo: true,
-                dataAtualizacao: Timestamp.now()
-              });
-            } else {
-              // Cria novo pré-cadastro
-              const newAdminDocRef = doc(db!, "usuarios", adminUserId);
-              await setDoc(newAdminDocRef, {
-                telefone: adminTelefone,
-                nome: adminNome.trim(),
-                nivelAcesso: "admin",
-                igrejaId: igrejaId,
-                unidadeId: finalUnidadeId,
-                ativo: true,
-                dataCriacao: Timestamp.now(),
-                criadoPor: usuario?.uid || null,
-              });
-            }
-          }
-        }
+            telefone: adminTelefone.replace(/\D/g, ""),
+          })
+          .eq("id", originalAdmin.id);
       }
 
-      toast.success(unidadeId ? "Unidade updated with success!" : "Unidade created with success!");
+      toast.success(unidadeId ? "Unidade atualizada com sucesso!" : "Unidade criada com sucesso!");
       if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Erro ao salvar unidade:", error);
@@ -512,12 +430,14 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
     if (!igrejaId || !canManage || !unidadeId) return;
 
     try {
-      const unidadeRef = doc(db!, "igrejas", igrejaId, "unidades", unidadeId);
-      await updateDoc(unidadeRef, {
-        ativa: false,
-        dataDesativacao: Timestamp.now(),
-      });
+      const { error } = await supabase
+        .from("unidades")
+        .update({
+          ativa: false,
+        })
+        .eq("id", unidadeId);
 
+      if (error) throw error;
       toast.success("Unidade desativada com sucesso!");
       if (onSuccess) onSuccess();
     } catch (error) {

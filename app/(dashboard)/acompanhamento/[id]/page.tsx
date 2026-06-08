@@ -3,9 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getDoc, deleteDoc, doc } from "firebase/firestore";
-import { getAcompanhamentosCollection, COLLECTIONS } from "@/lib/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -75,19 +73,54 @@ export default function AcompanhamentoDetalhesPage({ params }: { params: Promise
 
     async function loadAcompanhamento() {
       try {
-        // Search in all accessible units
-        for (const unidadeId of unidadesAcessiveis) {
-          const docRef = doc(db!, COLLECTIONS.IGREJAS, igrejaId!, COLLECTIONS.UNIDADES, unidadeId, COLLECTIONS.ACOMPANHAMENTOS, resolvedParams.id);
-          const docSnap = await getDoc(docRef);
+        const { data: acompData, error: acompError } = await supabase
+          .from("acompanhamentos")
+          .select("*")
+          .eq("id", resolvedParams.id)
+          .single();
 
-          if (docSnap.exists()) {
-            setAcompanhamento({ id: docSnap.id, unidadeId, ...docSnap.data() } as unknown as Acompanhamento);
-            setAcompUnidadeId(unidadeId);
-            return;
-          }
+        if (acompError || !acompData) {
+          router.push("/acompanhamento");
+          return;
         }
-        // Not found
-        router.push("/acompanhamento");
+
+        const { data: membroData } = await supabase
+          .from("membros")
+          .select("nome, foto_url")
+          .eq("id", acompData.membro_id)
+          .single();
+
+        const { data: userRegData } = await supabase
+          .from("usuarios")
+          .select("nome")
+          .eq("id", acompData.responsavel_uid)
+          .single();
+
+        const { data: memberRegData } = acompData.responsavel_uid && !userRegData ? await supabase
+          .from("membros")
+          .select("nome")
+          .eq("id", acompData.responsavel_uid)
+          .single() : { data: null };
+
+        const responsavelNome = userRegData?.nome || memberRegData?.nome || "Não encontrado";
+
+        setAcompanhamento({
+          id: acompData.id,
+          membroId: acompData.membro_id,
+          membroNome: membroData?.nome || "Membro não encontrado",
+          membroFotoUrl: membroData?.foto_url || "",
+          tipo: acompData.tipo as TipoAcompanhamento,
+          data: acompData.data ? { toDate: () => new Date(acompData.data) } : { toDate: () => new Date() },
+          responsavelUid: acompData.responsavel_uid || "",
+          responsavelNome: responsavelNome,
+          descricao: acompData.descricao,
+          dadosHospital: acompData.dados_hospital || undefined,
+          proximoContato: acompData.proximo_contato ? { toDate: () => new Date(acompData.proximo_contato) } : undefined,
+          observacoes: acompData.observacoes || "",
+          dataCriacao: acompData.data_criacao ? { toDate: () => new Date(acompData.data_criacao) } : { toDate: () => new Date() },
+          unidadeId: acompData.unidade_id,
+        });
+        setAcompUnidadeId(acompData.unidade_id);
       } catch (error) {
         console.error("Erro ao carregar acompanhamento:", error);
         toast.error("Erro ao carregar acompanhamento");
@@ -104,7 +137,12 @@ export default function AcompanhamentoDetalhesPage({ params }: { params: Promise
 
     setDeleting(true);
     try {
-      await deleteDoc(doc(db, COLLECTIONS.IGREJAS, igrejaId, COLLECTIONS.UNIDADES, acompUnidadeId!, COLLECTIONS.ACOMPANHAMENTOS, acompanhamento.id));
+      const { error } = await supabase
+        .from("acompanhamentos")
+        .delete()
+        .eq("id", acompanhamento.id);
+
+      if (error) throw error;
       toast.success("Acompanhamento excluído com sucesso");
       router.push("/acompanhamento");
     } catch (error) {

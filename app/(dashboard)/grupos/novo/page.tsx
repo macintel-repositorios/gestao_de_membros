@@ -2,13 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import {
-  query,
-  getDocs,
-  addDoc,
-  Timestamp,
-} from "firebase/firestore";
-import { getMembrosCollection, getGruposCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { GoogleMap } from "@/components/mapa/google-map";
 import { Button } from "@/components/ui/button";
@@ -81,17 +75,29 @@ export default function NovoGrupoPage() {
 
     const loadMembros = async () => {
       try {
-        const membrosData: Membro[] = [];
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .eq("situacao", "ativo");
+
+        if (error) throw error;
+
+        const list: Membro[] = (data || []).map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          telefone: row.telefone || "",
+          tipo: row.tipo,
+          ativo: row.ativo ?? (row.situacao === "ativo"),
+          unidadeId: row.unidade_id,
+          coordenadas: row.latitude && row.longitude ? { lat: Number(row.latitude), lng: Number(row.longitude) } : undefined,
+          endereco: {
+            bairro: row.bairro || "",
+          },
+        } as any));
         
-        for (const uId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, uId);
-          const snapshot = await getDocs(query(membrosRef));
-          snapshot.forEach((docSnap) => {
-            membrosData.push({ id: docSnap.id, unidadeId: uId, ...docSnap.data() } as Membro);
-          });
-        }
-        
-        setMembros(membrosData);
+        setMembros(list);
       } catch (error) {
         console.error("Erro ao carregar membros:", error);
       } finally {
@@ -202,17 +208,21 @@ ${selectedMembers.map((m) => `- ${m.nome}: ${formatPhone(m.telefone)}`).join("\n
 
     setSaving(true);
     try {
-      await addDoc(getGruposCollection(igrejaId, unidadeId), {
-        nome: nomeGrupo,
-        tipo: tipoGrupo,
-        liderUid: user?.uid,
-        liderMembroId: liderSelecionado,
-        membrosIds: Array.from(membrosSelecionados),
-        raioKm: raio,
-        linkWhatsApp: linkWhatsApp || null,
-        dataCriacao: Timestamp.now(),
-        ativo: true,
-      });
+      const { error } = await supabase
+        .from("grupos")
+        .insert({
+          nome: nomeGrupo.trim(),
+          tipo: tipoGrupo,
+          lider_uid: liderSelecionado,
+          membros_ids: Array.from(membrosSelecionados),
+          raio_km: raio,
+          link_whatsapp: linkWhatsApp || null,
+          ativo: true,
+          unidade_id: unidadeId,
+          igreja_id: igrejaId,
+        });
+
+      if (error) throw error;
 
       toast.success("Grupo criado com sucesso!");
       router.push("/grupos");

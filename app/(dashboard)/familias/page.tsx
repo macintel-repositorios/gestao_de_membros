@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  query,
-  orderBy,
-  onSnapshot,
-  updateDoc,
-} from "firebase/firestore";
-import { getFamiliasCollection, getFamiliaDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -102,54 +96,46 @@ export default function FamiliasPage() {
     const loadResponsaveis = async () => {
       setLoadingResponsaveis(true);
       try {
-        const { getDoc } = await import("firebase/firestore");
-        const { getMembroDoc } = await import("@/lib/firestore");
-
         // Responsável 1
+        let r1 = null;
         if (familiaParaVisualizar.responsavel1Id) {
-          for (const unidadeId of unidadesAcessiveis) {
-            try {
-              const docRef = getMembroDoc(igrejaId, unidadeId, familiaParaVisualizar.responsavel1Id);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                const data = docSnap.data();
-                setResponsavel1({
-                  id: docSnap.id,
-                  nome: data.nome,
-                  telefone: data.telefone,
-                  fotoUrl: data.fotoUrl,
-                  unidadeId,
-                });
-                break;
-              }
-            } catch {
-              continue;
-            }
+          const { data, error } = await supabase
+            .from("membros")
+            .select("id, nome, telefone, foto_url, unidade_id")
+            .eq("id", familiaParaVisualizar.responsavel1Id)
+            .single();
+          if (data && !error) {
+            r1 = {
+              id: data.id,
+              nome: data.nome,
+              telefone: data.telefone || "",
+              fotoUrl: data.foto_url || "",
+              unidadeId: data.unidade_id,
+            };
           }
         }
 
         // Responsável 2
+        let r2 = null;
         if (familiaParaVisualizar.responsavel2Id) {
-          for (const unidadeId of unidadesAcessiveis) {
-            try {
-              const docRef = getMembroDoc(igrejaId, unidadeId, familiaParaVisualizar.responsavel2Id);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                const data = docSnap.data();
-                setResponsavel2({
-                  id: docSnap.id,
-                  nome: data.nome,
-                  telefone: data.telefone,
-                  fotoUrl: data.fotoUrl,
-                  unidadeId,
-                });
-                break;
-              }
-            } catch {
-              continue;
-            }
+          const { data, error } = await supabase
+            .from("membros")
+            .select("id, nome, telefone, foto_url, unidade_id")
+            .eq("id", familiaParaVisualizar.responsavel2Id)
+            .single();
+          if (data && !error) {
+            r2 = {
+              id: data.id,
+              nome: data.nome,
+              telefone: data.telefone || "",
+              fotoUrl: data.foto_url || "",
+              unidadeId: data.unidade_id,
+            };
           }
         }
+
+        setResponsavel1(r1);
+        setResponsavel2(r2);
       } catch (error) {
         console.error("Erro ao carregar responsáveis da família:", error);
       } finally {
@@ -158,7 +144,7 @@ export default function FamiliasPage() {
     };
 
     loadResponsaveis();
-  }, [igrejaId, familiaParaVisualizar, unidadesAcessiveis]);
+  }, [igrejaId, familiaParaVisualizar]);
 
   const formatPhone = (phone: string) => {
     if (phone?.length === 11) {
@@ -167,44 +153,69 @@ export default function FamiliasPage() {
     return phone || "-";
   };
 
-  useEffect(() => {
+  const loadFamilias = async () => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
       setLoading(false);
       return;
     }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("familias")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesAcessiveis)
+        .order("nome", { ascending: true });
 
-    const unsubscribes: (() => void)[] = [];
+      if (error) throw error;
 
-    unidadesAcessiveis.forEach((unidadeId) => {
-      const familiasRef = getFamiliasCollection(igrejaId, unidadeId);
-      const q = query(familiasRef, orderBy("nome", "asc"));
+      const list: FamiliaComUnidade[] = (data || []).map((row) => ({
+        id: row.id,
+        nome: row.nome,
+        responsavel1Id: row.responsavel_1_id,
+        responsavel1Nome: "",
+        responsavel2Id: row.responsavel_2_id || undefined,
+        responsavel2Nome: "",
+        dependentes: (row.dependentes || []).map((dep: any) => ({
+          ...dep,
+          dataNascimento: dep.dataNascimento ? { toDate: () => new Date(dep.dataNascimento) } : undefined,
+        })),
+        observacoes: row.observacoes || "",
+        unidadeId: row.unidade_id,
+        dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
+        dataAtualizacao: row.data_atualizacao ? { toDate: () => new Date(row.data_atualizacao) } : undefined,
+        criadoPor: row.criado_por || "",
+        ativo: row.ativo,
+      }));
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const familiasData: FamiliaComUnidade[] = [];
-        snapshot.forEach((docSnap) => {
-          familiasData.push({ 
-            id: docSnap.id, 
-            ...docSnap.data(),
-            unidadeId 
-          } as FamiliaComUnidade);
-        });
-        
-        setFamilias((prev) => {
-          const outrosUnidades = prev.filter((f) => f.unidadeId !== unidadeId);
-          return [...outrosUnidades, ...familiasData].sort((a, b) => 
-            a.nome.localeCompare(b.nome)
-          );
-        });
-        setLoading(false);
+      const { data: membrosData } = await supabase
+        .from("membros")
+        .select("id, nome")
+        .eq("igreja_id", igrejaId);
+
+      const membrosMap = new Map<string, string>();
+      if (membrosData) {
+        membrosData.forEach((m) => membrosMap.set(m.id, m.nome));
+      }
+
+      list.forEach((fam) => {
+        fam.responsavel1Nome = membrosMap.get(fam.responsavel1Id) || "Não encontrado";
+        if (fam.responsavel2Id) {
+          fam.responsavel2Nome = membrosMap.get(fam.responsavel2Id) || "Não encontrado";
+        }
       });
 
-      unsubscribes.push(unsubscribe);
-    });
+      setFamilias(list);
+    } catch (err) {
+      console.error("Erro ao carregar famílias:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      unsubscribes.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [igrejaId, unidadesAcessiveis]);
+  useEffect(() => {
+    loadFamilias();
+  }, [igrejaId, unidadesAcessiveis.join(",")]);
 
   const filteredFamilias = familias.filter((familia) => {
     if (!familia.ativo) return false;
@@ -223,10 +234,15 @@ export default function FamiliasPage() {
     if (!familiaToDeactivate || !igrejaId) return;
 
     try {
-      const familiaRef = getFamiliaDoc(igrejaId, familiaToDeactivate.unidadeId, familiaToDeactivate.id);
-      await updateDoc(familiaRef, { ativo: false });
+      const { error } = await supabase
+        .from("familias")
+        .update({ ativo: false })
+        .eq("id", familiaToDeactivate.id);
+
+      if (error) throw error;
       toast.success("Família desativada com sucesso");
       setFamiliaToDeactivate(null);
+      loadFamilias();
     } catch (error) {
       console.error("Erro ao desativar família:", error);
       toast.error("Erro ao desativar família");
@@ -653,6 +669,7 @@ export default function FamiliasPage() {
                 onSuccess={() => {
                   setFamiliaParaEditar(null);
                   toast.success("Família atualizada com sucesso!");
+                  loadFamilias();
                 }}
               />
             </div>

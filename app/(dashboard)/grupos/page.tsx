@@ -2,18 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  getDoc,
-  updateDoc,
-  getDocs,
-  doc,
-} from "firebase/firestore";
-import { getGruposCollection, getMembrosCollection, getMembroDoc, COLLECTIONS } from "@/lib/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +60,7 @@ import {
   Calendar,
   Eye,
   Pencil,
+  Phone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Grupo, Membro, TIPOS_GRUPO } from "@/lib/types";
@@ -112,25 +102,30 @@ export default function GruposPage() {
     const loadMembrosDoGrupo = async () => {
       setLoadingMembros(true);
       try {
-        const { getMembrosCollection } = await import("@/lib/firestore");
-        const { getDocs, query } = await import("firebase/firestore");
-        
         if (!grupoParaVisualizar.membrosIds || grupoParaVisualizar.membrosIds.length === 0) {
           setMembrosDoGrupo([]);
           return;
         }
 
-        const membrosRef = getMembrosCollection(igrejaId, grupoParaVisualizar.unidadeId);
-        const q = query(membrosRef);
-        const snapshot = await getDocs(q);
-        const data: Membro[] = [];
-        snapshot.forEach((docSnap) => {
-          if (grupoParaVisualizar.membrosIds.includes(docSnap.id)) {
-            data.push({ id: docSnap.id, ...docSnap.data() } as Membro);
-          }
-        });
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("id", grupoParaVisualizar.membrosIds);
 
-        setMembrosDoGrupo(data);
+        if (error) throw error;
+
+        const list: Membro[] = (data || []).map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          telefone: row.telefone || "",
+          tipo: row.tipo,
+          endereco: {
+            bairro: row.bairro || "",
+          },
+        } as any));
+
+        setMembrosDoGrupo(list);
       } catch (error) {
         console.error("Erro ao carregar membros do grupo:", error);
       } finally {
@@ -150,9 +145,66 @@ export default function GruposPage() {
     }
   }, [grupoParaEditar]);
 
+  const loadGrupos = async () => {
+    if (!igrejaId || unidadesAcessiveis.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data: gruposData, error: gruposError } = await supabase
+        .from("grupos")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesAcessiveis)
+        .eq("ativo", true)
+        .order("data_criacao", { ascending: false });
+
+      if (gruposError) throw gruposError;
+
+      const { data: membrosData, error: membrosError } = await supabase
+        .from("membros")
+        .select("id, nome")
+        .eq("igreja_id", igrejaId);
+
+      const membrosMap = new Map<string, string>();
+      if (!membrosError && membrosData) {
+        membrosData.forEach((m) => membrosMap.set(m.id, m.nome));
+      }
+
+      const list: GrupoComDetalhes[] = (gruposData || []).map((row) => {
+        const membrosIds = Array.isArray(row.membros_ids) ? row.membros_ids : [];
+        return {
+          id: row.id,
+          nome: row.nome,
+          tipo: row.tipo,
+          liderUid: row.lider_uid,
+          liderNome: row.lider_uid ? membrosMap.get(row.lider_uid) || "Não encontrado" : "N/A",
+          membrosIds: membrosIds,
+          membrosNomes: membrosIds.map((id: string) => membrosMap.get(id) || "Desconhecido").slice(0, 3),
+          linkWhatsApp: row.link_whatsapp || "",
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : undefined,
+          ativo: row.ativo,
+          unidadeId: row.unidade_id,
+        };
+      });
+
+      setGrupos(list);
+    } catch (error) {
+      console.error("Erro ao carregar grupos:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGrupos();
+  }, [igrejaId, unidadeId, unidadesAcessiveis.join(",")]);
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!grupoParaEditar || !igrejaId || !grupoParaEditar.unidadeId) return;
+    if (!grupoParaEditar || !igrejaId) return;
 
     if (!nomeEdit.trim()) {
       toast.error("Nome do grupo é obrigatório");
@@ -161,28 +213,20 @@ export default function GruposPage() {
 
     setSavingEdit(true);
     try {
-      const { doc, updateDoc } = await import("firebase/firestore");
-      const { db } = await import("@/lib/firebase");
-      const { COLLECTIONS } = await import("@/lib/firestore");
-      
-      const grupoRef = doc(db!, COLLECTIONS.IGREJAS, igrejaId, COLLECTIONS.UNIDADES, grupoParaEditar.unidadeId, COLLECTIONS.GRUPOS, grupoParaEditar.id);
-      await updateDoc(grupoRef, {
-        nome: nomeEdit.trim(),
-        tipo: tipoEdit,
-        linkWhatsApp: linkEdit.trim() || null,
-      });
+      const { error } = await supabase
+        .from("grupos")
+        .update({
+          nome: nomeEdit.trim(),
+          tipo: tipoEdit,
+          link_whatsapp: linkEdit.trim() || null,
+        })
+        .eq("id", grupoParaEditar.id);
 
-      // Atualiza estado local
-      setGrupos((prev) =>
-        prev.map((g) =>
-          g.id === grupoParaEditar.id
-            ? { ...g, nome: nomeEdit.trim(), tipo: tipoEdit, linkWhatsApp: linkEdit.trim() || null }
-            : g
-        )
-      );
+      if (error) throw error;
 
       toast.success("Grupo atualizado com sucesso!");
       setGrupoParaEditar(null);
+      loadGrupos();
     } catch (error) {
       console.error("Erro ao editar grupo:", error);
       toast.error("Erro ao editar grupo");
@@ -191,53 +235,21 @@ export default function GruposPage() {
     }
   };
 
-  useEffect(() => {
-    if (!igrejaId || !unidadeId || unidadesAcessiveis.length === 0) {
-      setLoading(false);
-      return;
-    }
-
-    const loadGrupos = async () => {
-      try {
-        const gruposData: GrupoComDetalhes[] = [];
-        
-        for (const uId of unidadesAcessiveis) {
-          const gruposRef = getGruposCollection(igrejaId, uId);
-          const q = query(
-            gruposRef,
-            where("ativo", "==", true),
-            orderBy("dataCriacao", "desc")
-          );
-          
-          const snapshot = await getDocs(q);
-          
-          for (const docSnap of snapshot.docs) {
-            const grupo = { id: docSnap.id, unidadeId: uId, ...docSnap.data() } as unknown as GrupoComDetalhes;
-            gruposData.push(grupo);
-          }
-        }
-
-        setGrupos(gruposData);
-      } catch (error) {
-        console.error("Erro ao carregar grupos:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadGrupos();
-  }, [igrejaId, unidadeId, unidadesAcessiveis]);
-
   const handleDelete = async () => {
-    if (!grupoToDelete || !igrejaId || !grupoToDelete.unidadeId) return;
+    if (!grupoToDelete || !igrejaId) return;
 
     try {
-      const grupoRef = doc(db!, COLLECTIONS.IGREJAS, igrejaId, COLLECTIONS.UNIDADES, grupoToDelete.unidadeId, COLLECTIONS.GRUPOS, grupoToDelete.id);
-      await updateDoc(grupoRef, {
-        ativo: false,
-      });
+      const { error } = await supabase
+        .from("grupos")
+        .update({
+          ativo: false,
+        })
+        .eq("id", grupoToDelete.id);
+
+      if (error) throw error;
       toast.success("Grupo excluído com sucesso");
       setGrupoToDelete(null);
+      loadGrupos();
     } catch (error) {
       console.error("Erro ao excluir grupo:", error);
       toast.error("Erro ao excluir grupo");
@@ -261,6 +273,14 @@ export default function GruposPage() {
         return "bg-gray-500";
     }
   };
+
+  const formatPhone = (phone: string) => {
+    if (phone.length === 11) {
+      return `(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`;
+    }
+    return phone;
+  };
+
 
   return (
     <div className="space-y-6">

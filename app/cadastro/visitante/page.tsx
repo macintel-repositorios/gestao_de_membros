@@ -2,8 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { addDoc, Timestamp, collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,38 +63,39 @@ function CadastroVisitanteContent() {
   // Carrega informações da igreja
   useEffect(() => {
     async function loadIgreja() {
-      if (!igrejaId || !db) {
+      if (!igrejaId) {
         setLoadingIgreja(false);
         return;
       }
 
       try {
         // Busca dados da igreja
-        const igrejaRef = doc(db, "igrejas", igrejaId);
-        const igrejaSnap = await getDoc(igrejaRef);
+        const { data: igrejaData, error: igrejaErr } = await supabase
+          .from("igrejas")
+          .select("*")
+          .eq("id", igrejaId)
+          .single();
+          
+        if (igrejaErr) throw igrejaErr;
         
-        if (igrejaSnap.exists()) {
-          const data = igrejaSnap.data();
+        if (igrejaData) {
           setIgrejaInfo({
-            nome: data.nome || "Igreja",
-            convencao: data.convencao,
+            nome: igrejaData.nome || "Igreja",
+            convencao: igrejaData.convencao,
           });
         }
 
         // Busca unidades
-        const unidadesRef = collection(db, "igrejas", igrejaId, "unidades");
-        const unidadesSnap = await getDocs(unidadesRef);
+        const { data: unidadesData, error: unidadesErr } = await supabase
+          .from("unidades")
+          .select("id, nome, ativa")
+          .eq("igreja_id", igrejaId);
+          
+        if (unidadesErr) throw unidadesErr;
         
-        const unidadesList: UnidadeSimples[] = [];
-        unidadesSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.ativa !== false) {
-            unidadesList.push({
-              id: docSnap.id,
-              nome: data.nome || "Sem nome",
-            });
-          }
-        });
+        const unidadesList: UnidadeSimples[] = (unidadesData || [])
+          .filter(u => u.ativa !== false)
+          .map(u => ({ id: u.id, nome: u.nome }));
         
         setUnidades(unidadesList);
         
@@ -130,7 +131,7 @@ function CadastroVisitanteContent() {
   const updateAcompanhante = (index: number, field: keyof Acompanhante, value: string) => {
     const updated = [...acompanhantes];
     if (field === "dataNascimento") {
-      updated[index][field] = value ? Timestamp.fromDate(new Date(value)) : undefined;
+      updated[index][field] = value ? { toDate: () => new Date(value) } : undefined;
     } else {
       updated[index][field] = value;
     }
@@ -156,49 +157,36 @@ function CadastroVisitanteContent() {
       toast.error("Selecione uma unidade");
       return;
     }
-    if (!igrejaId || !db) {
+    if (!igrejaId) {
       toast.error("Link inválido");
       return;
     }
 
     setLoading(true);
     try {
-      const visitantesRef = collection(db, "igrejas", igrejaId, "unidades", unidadeId, "visitantes");
-      
-      const visitanteData: Record<string, unknown> = {
+      const visitantePayload = {
         nome: nome.trim(),
         telefone: telefone.replace(/\D/g, ""),
-        dataVisita: Timestamp.now(),
-        primeiraVisita,
-        ativo: true,
-        dataCriacao: Timestamp.now(),
-        criadoPor: "formulario_publico",
-        unidadeId,
+        data_visita: format(new Date(), "yyyy-MM-dd"),
+        primeira_visita: primeiraVisita,
+        data_criacao: format(new Date(), "yyyy-MM-dd"),
+        criado_por: "formulario_publico",
+        unidade_id: unidadeId,
+        igreja_id: igrejaId,
+        data_nascimento: dataNascimento || null,
+        ja_recebeu_jesus: jaRecebeuJesus !== undefined ? jaRecebeuJesus : null,
+        pertence_igreja: pertenceIgreja !== undefined ? pertenceIgreja : null,
+        qual_igreja: qualIgreja.trim() || null,
+        convidado_por: convidadoPor.trim() || null,
+        pedido_oracao: pedidoOracao.trim() || null,
+        acompanhantes: acompanhantes.length > 0 ? acompanhantes.filter(a => a.nome.trim()) : null,
       };
 
-      if (dataNascimento) {
-        visitanteData.dataNascimento = Timestamp.fromDate(new Date(dataNascimento));
-      }
-      if (jaRecebeuJesus !== undefined) {
-        visitanteData.jaRecebeuJesus = jaRecebeuJesus;
-      }
-      if (pertenceIgreja !== undefined) {
-        visitanteData.pertenceIgreja = pertenceIgreja;
-      }
-      if (qualIgreja.trim()) {
-        visitanteData.qualIgreja = qualIgreja.trim();
-      }
-      if (convidadoPor.trim()) {
-        visitanteData.convidadoPor = convidadoPor.trim();
-      }
-      if (pedidoOracao.trim()) {
-        visitanteData.pedidoOracao = pedidoOracao.trim();
-      }
-      if (acompanhantes.length > 0) {
-        visitanteData.acompanhantes = acompanhantes.filter(a => a.nome.trim());
-      }
-
-      await addDoc(visitantesRef, visitanteData);
+      const { error } = await supabase
+        .from("visitantes")
+        .insert(visitantePayload);
+        
+      if (error) throw error;
       setSuccess(true);
     } catch (error) {
       console.error("Erro ao cadastrar:", error);

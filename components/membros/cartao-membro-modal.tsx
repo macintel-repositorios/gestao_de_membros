@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getIgrejaDoc } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Membro, Igreja, TIPOS_MEMBRO, CARGOS_MEMBRO } from "@/lib/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -35,10 +33,14 @@ export function CartaoMembroModal({ membro, open, onOpenChange }: CartaoMembroMo
     async function loadIgreja() {
       setLoading(true);
       try {
-        const docRef = getIgrejaDoc(igrejaId);
-        const snapshot = await getDoc(docRef);
-        if (snapshot.exists()) {
-          setIgreja({ id: snapshot.id, ...snapshot.data() } as Igreja);
+        const { data, error } = await supabase
+          .from("igrejas")
+          .select("*")
+          .eq("id", igrejaId)
+          .single();
+        if (error) throw error;
+        if (data) {
+          setIgreja(data as any);
         }
       } catch (error) {
         console.error("Erro ao carregar dados da igreja:", error);

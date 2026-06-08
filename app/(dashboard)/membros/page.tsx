@@ -2,17 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  query,
-  orderBy,
-  onSnapshot,
-  updateDoc,
-  doc,
-  where,
-  getDocs,
-} from "firebase/firestore";
-import { getMembrosCollection, getMembroDoc, getAcompanhamentosCollection } from "@/lib/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -144,21 +134,24 @@ export default function MembrosPage() {
     const loadAcompanhamentos = async () => {
       setLoadingAcomp(true);
       try {
-        const acompRef = getAcompanhamentosCollection(igrejaId, membroParaVisualizar.unidadeId);
-        const acompQuery = query(
-          acompRef,
-          where("membroId", "==", membroParaVisualizar.id)
-        );
-        const snapshot = await getDocs(acompQuery);
-        const data: Acompanhamento[] = [];
-        snapshot.forEach((docSnap) => {
-          data.push({ id: docSnap.id, ...docSnap.data() } as unknown as Acompanhamento);
-        });
+        const { data, error } = await supabase
+          .from("acompanhamentos")
+          .select("*")
+          .eq("membro_id", membroParaVisualizar.id)
+          .order("data", { ascending: false });
         
-        // Ordena por data decrescente no cliente para evitar a necessidade de criar um índice composto no Firestore
-        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+        if (error) throw error;
         
-        setAcompanhamentos(data);
+        const list = (data || []).map(row => ({
+          id: row.id,
+          tipo: row.tipo as TipoAcompanhamento,
+          data: { toDate: () => new Date(row.data) },
+          descricao: row.descricao,
+          responsavelNome: row.responsavel_nome,
+          membroId: row.membro_id,
+        }));
+        
+        setAcompanhamentos(list);
       } catch (error) {
         console.error("Erro ao carregar acompanhamentos:", error);
       } finally {
@@ -197,47 +190,60 @@ export default function MembrosPage() {
       ? [unidadeSelecionada.id] 
       : unidadesAcessiveis;
 
-  useEffect(() => {
+  const loadMembros = async () => {
     if (!igrejaId || unidadesParaCarregar.length === 0) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    setMembros([]);
-    const unsubscribes: (() => void)[] = [];
+    try {
+      const { data, error } = await supabase
+        .from("membros")
+        .select("*")
+        .eq("igreja_id", igrejaId)
+        .in("unidade_id", unidadesParaCarregar)
+        .order("nome", { ascending: true });
 
-    // Escuta membros das unidades selecionadas
-    unidadesParaCarregar.forEach((unidadeId) => {
-      const membrosRef = getMembrosCollection(igrejaId, unidadeId);
-      const q = query(membrosRef, orderBy("nome", "asc"));
+      if (error) throw error;
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const membrosData: MembroComUnidade[] = [];
-        snapshot.forEach((docSnap) => {
-          membrosData.push({ 
-            id: docSnap.id, 
-            ...docSnap.data(),
-            unidadeId 
-          } as MembroComUnidade);
-        });
-        
-        // Atualiza os membros dessa unidade
-        setMembros((prev) => {
-          const outrosUnidades = prev.filter((m) => m.unidadeId !== unidadeId);
-          return [...outrosUnidades, ...membrosData].sort((a, b) => 
-            a.nome.localeCompare(b.nome)
-          );
-        });
-        setLoading(false);
-      });
+      const list: MembroComUnidade[] = (data || []).map(row => ({
+        id: row.id,
+        nome: row.nome,
+        tipo: row.tipo as TipoMembro,
+        cargo: row.cargo as CargoMembro,
+        cargoDescricao: row.cargo_descricao || "",
+        telefone: row.telefone || "",
+        email: row.email || "",
+        fotoUrl: row.foto_url || "",
+        ativo: row.ativo ?? (row.situacao === "ativo"),
+        observacoes: row.observacoes || "",
+        dataNascimento: row.data_nascimento ? { toDate: () => new Date(row.data_nascimento + "T12:00:00") } : undefined,
+        dataCadastro: row.data_cadastro ? { toDate: () => new Date(row.data_cadastro + "T12:00:00") } : undefined,
+        dataBatismo: row.data_batismo ? { toDate: () => new Date(row.data_batismo + "T12:00:00") } : undefined,
+        unidadeId: row.unidade_id,
+        coordenadas: row.latitude && row.longitude ? { lat: row.latitude, lng: row.longitude } : undefined,
+        endereco: {
+          logradouro: row.logradouro || "",
+          numero: row.numero || "",
+          complemento: row.complemento || "",
+          bairro: row.bairro || "",
+          cidade: row.cidade || "",
+          estado: row.estado || "",
+          cep: row.cep || "",
+        }
+      }));
 
-      unsubscribes.push(unsubscribe);
-    });
+      setMembros(list);
+    } catch (err) {
+      console.error("Erro ao carregar membros:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      unsubscribes.forEach((unsubscribe) => unsubscribe());
-    };
+  useEffect(() => {
+    loadMembros();
   }, [igrejaId, unidadesParaCarregar.join(",")]);
 
   const filteredMembros = membros.filter((membro) => {
@@ -269,10 +275,15 @@ export default function MembrosPage() {
     if (!memberToDeactivate || !igrejaId) return;
 
     try {
-      const membroRef = getMembroDoc(igrejaId, memberToDeactivate.unidadeId, memberToDeactivate.id);
-      await updateDoc(membroRef, { ativo: false });
+      const { error } = await supabase
+        .from("membros")
+        .update({ situacao: "inativo" })
+        .eq("id", memberToDeactivate.id);
+
+      if (error) throw error;
       toast.success("Membro desativado com sucesso");
       setMemberToDeactivate(null);
+      loadMembros();
     } catch (error) {
       console.error("Erro ao desativar membro:", error);
       toast.error("Erro ao desativar membro");
@@ -828,6 +839,7 @@ export default function MembrosPage() {
                 onSuccess={() => {
                   setMembroParaEditar(null);
                   toast.success("Membro atualizado com sucesso!");
+                  loadMembros();
                 }}
               />
             </div>

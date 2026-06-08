@@ -1,4 +1,6 @@
-import { Timestamp } from "firebase/firestore";
+export type Timestamp = {
+  toDate: () => Date;
+};
 
 export type TipoMembro = "visitante" | "congregado" | "membro" | "obreiro" | "lider";
 
@@ -54,7 +56,7 @@ export type FuncaoIgreja =
 export type NivelAcesso = "full" | "admin" | "lider" | "user";
 
 // Tipos de unidade na hierarquia
-export type TipoUnidade = "sede" | "congregacao" | "subcongregacao";
+export type TipoUnidade = "sede" | "congregacao" | "subcongregacao" | "ponto_evangelistico";
 
 // Tipos de igreja
 export type TipoIgreja = "sede" | "congregacao" | "subcongregacao" | "missao" | "outro";
@@ -303,6 +305,7 @@ export const TIPOS_UNIDADE: Record<TipoUnidade, string> = {
   sede: "Sede",
   congregacao: "Congregação",
   subcongregacao: "Subcongregação",
+  ponto_evangelistico: "Ponto Evangelístico",
 };
 
 export const TIPOS_IGREJA: Record<TipoIgreja, string> = {

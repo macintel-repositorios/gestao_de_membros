@@ -7,12 +7,8 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const envVars = [
-  { key: "NEXT_PUBLIC_FIREBASE_API_KEY", description: "API Key do Firebase" },
-  { key: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", description: "Auth Domain (projeto.firebaseapp.com)" },
-  { key: "NEXT_PUBLIC_FIREBASE_PROJECT_ID", description: "Project ID" },
-  { key: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET", description: "Storage Bucket" },
-  { key: "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", description: "Messaging Sender ID" },
-  { key: "NEXT_PUBLIC_FIREBASE_APP_ID", description: "App ID" },
+  { key: "NEXT_PUBLIC_SUPABASE_URL", description: "URL do projeto Supabase" },
+  { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", description: "Anon Key do Supabase" },
   { key: "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY", description: "Google Maps API Key (opcional para desenvolvimento)" },
 ];
 
@@ -32,41 +28,39 @@ export function SetupRequired() {
           <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Settings className="w-6 h-6 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Configuracao Necessaria</CardTitle>
+          <CardTitle className="text-2xl">Configuração Necessária</CardTitle>
           <CardDescription>
-            O sistema precisa das credenciais do Firebase para funcionar.
+            O sistema precisa das credenciais do Supabase para funcionar.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <Alert>
             <AlertDescription>
-              Siga os passos abaixo para configurar o Firebase e habilitar o sistema.
+              Siga os passos abaixo para configurar o Supabase e habilitar o sistema.
             </AlertDescription>
           </Alert>
 
           <div className="space-y-4">
-            <h3 className="font-semibold text-lg">Passo 1: Criar projeto no Firebase</h3>
+            <h3 className="font-semibold text-lg">Passo 1: Criar projeto no Supabase</h3>
             <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-              <li>Acesse o <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">Firebase Console <ExternalLink className="w-3 h-3" /></a></li>
-              <li>Clique em "Adicionar projeto" e siga as instrucoes</li>
-              <li>Ative o Authentication com "Telefone" como provedor</li>
-              <li>Crie um banco Firestore Database</li>
+              <li>Acesse o <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">Supabase Console <ExternalLink className="w-3 h-3" /></a></li>
+              <li>Crie um projeto e defina uma senha forte para o banco</li>
+              <li>Acesse o editor SQL (SQL Editor) do projeto e execute o script <code>supabase-schema.sql</code> que está na raiz do seu projeto local para criar as tabelas</li>
             </ol>
           </div>
 
           <div className="space-y-4">
             <h3 className="font-semibold text-lg">Passo 2: Obter credenciais</h3>
             <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-              <li>No Firebase Console, va em Configuracoes do Projeto</li>
-              <li>Na secao "Seus apps", adicione um app Web</li>
-              <li>Copie as credenciais do firebaseConfig</li>
+              <li>No painel do Supabase, vá em <strong>Settings</strong> &gt; <strong>API</strong></li>
+              <li>Copie a **Project URL** e a **anon public API key**</li>
             </ol>
           </div>
 
           <div className="space-y-4">
-            <h3 className="font-semibold text-lg">Passo 3: Adicionar variaveis de ambiente</h3>
+            <h3 className="font-semibold text-lg">Passo 3: Adicionar variáveis de ambiente</h3>
             <p className="text-sm text-muted-foreground mb-3">
-              Clique no botao <strong>Settings</strong> no canto superior direito do v0, depois em <strong>Vars</strong>, e adicione:
+              Adicione estas variáveis no arquivo <code>.env.local</code> na raiz do projeto:
             </p>
             <div className="bg-muted rounded-lg p-4 space-y-2">
               {envVars.map((env) => (
@@ -98,7 +92,7 @@ export function SetupRequired() {
 
           <div className="pt-4 border-t">
             <p className="text-sm text-muted-foreground text-center">
-              Apos configurar as variaveis, a pagina sera recarregada automaticamente.
+              Após configurar as variáveis, a página será recarregada automaticamente.
             </p>
           </div>
         </CardContent>

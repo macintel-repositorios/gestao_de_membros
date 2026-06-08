@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getDoc, query, where, orderBy, onSnapshot, getDocs } from "firebase/firestore";
-import { getMembroDoc, getMembrosCollection, getAcompanhamentosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +38,8 @@ import {
   CARGOS_MEMBRO,
   TIPOS_ACOMPANHAMENTO,
   CORES_ACOMPANHAMENTO,
+  TipoMembro,
+  CargoMembro,
 } from "@/lib/types";
 
 const ICONES_ACOMPANHAMENTO: Record<TipoAcompanhamento, React.ComponentType<{ className?: string }>> = {
@@ -67,27 +68,49 @@ export default function MembroDetalhesPage() {
 
     async function loadMembro() {
       try {
-        // Search for member in all accessible units
-        let foundMembro: Membro | null = null;
-        let foundUnidadeId: string | null = null;
-        
-        for (const unidadeId of unidadesAcessiveis) {
-          const docRef = getMembroDoc(igrejaId!, unidadeId, params.id as string);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            foundMembro = { id: docSnap.id, unidadeId, ...docSnap.data() } as Membro;
-            foundUnidadeId = unidadeId;
-            break;
-          }
-        }
-        
-        if (foundMembro) {
-          setMembro(foundMembro);
-          setMembroUnidadeId(foundUnidadeId);
+        const { data, error } = await supabase
+          .from("membros")
+          .select("*")
+          .eq("id", params.id)
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .single();
 
-        } else {
+        if (error || !data) {
           router.push("/membros");
+          return;
         }
+
+        const foundMembro: Membro = {
+          id: data.id,
+          nome: data.nome,
+          telefone: data.telefone || "",
+          email: data.email || "",
+          fotoUrl: data.foto_url || "",
+          ativo: data.ativo ?? (data.situacao === "ativo"),
+          tipo: data.tipo as TipoMembro,
+          cargo: data.cargo as CargoMembro,
+          cargoDescricao: data.cargo_descricao || "",
+          unidadeId: data.unidade_id,
+          dataNascimento: data.data_nascimento ? { toDate: () => new Date(data.data_nascimento + "T12:00:00") } : undefined,
+          dataCadastro: data.data_cadastro ? { toDate: () => new Date(data.data_cadastro) } : undefined,
+          dataConversao: data.data_conversao ? { toDate: () => new Date(data.data_conversao + "T12:00:00") } : undefined,
+          dataBatismo: data.data_batismo ? { toDate: () => new Date(data.data_batismo + "T12:00:00") } : undefined,
+          endereco: {
+            logradouro: data.logradouro || "",
+            numero: data.numero || "",
+            complemento: data.complemento || "",
+            bairro: data.bairro || "",
+            cidade: data.cidade || "",
+            estado: data.estado || "",
+            cep: data.cep || "",
+          },
+          coordenadas: data.latitude && data.longitude ? { lat: data.latitude, lng: data.longitude } : { lat: 0, lng: 0 },
+          observacoes: data.observacoes || "",
+        } as unknown as Membro;
+
+        setMembro(foundMembro);
+        setMembroUnidadeId(data.unidade_id);
       } catch (error) {
         console.error("Erro ao carregar membro:", error);
       } finally {
@@ -107,20 +130,45 @@ export default function MembroDetalhesPage() {
 
     const loadAcompanhamentos = async () => {
       try {
-        const acompRef = getAcompanhamentosCollection(igrejaId, membroUnidadeId);
-        const acompQuery = query(
-          acompRef,
-          where("membroId", "==", params.id)
-        );
-        
-        const snapshot = await getDocs(acompQuery);
-        const data: Acompanhamento[] = [];
-        snapshot.forEach((docSnap) => {
-          data.push({ id: docSnap.id, unidadeId: membroUnidadeId, ...docSnap.data() } as unknown as Acompanhamento);
-        });
+        const { data: acompData, error: acompError } = await supabase
+          .from("acompanhamentos")
+          .select("*")
+          .eq("membro_id", params.id)
+          .eq("igreja_id", igrejaId)
+          .order("data", { ascending: false });
 
-        // Ordena por data decrescente no cliente para evitar a necessidade de criar um índice composto no Firestore
-        data.sort((a, b) => b.data.toDate().getTime() - a.data.toDate().getTime());
+        if (acompError) throw acompError;
+
+        const { data: usuariosData } = await supabase
+          .from("usuarios")
+          .select("id, nome")
+          .eq("igreja_id", igrejaId);
+
+        const { data: membrosData } = await supabase
+          .from("membros")
+          .select("id, nome")
+          .eq("igreja_id", igrejaId);
+
+        const usersMap = new Map<string, string>();
+        if (usuariosData) usuariosData.forEach((u) => usersMap.set(u.id, u.nome));
+        if (membrosData) membrosData.forEach((m) => usersMap.set(m.id, m.nome));
+
+        const data: Acompanhamento[] = (acompData || []).map((row) => ({
+          id: row.id,
+          membroId: row.membro_id,
+          membroNome: membro?.nome || "Membro",
+          membroFotoUrl: membro?.fotoUrl || "",
+          tipo: row.tipo as TipoAcompanhamento,
+          data: row.data ? { toDate: () => new Date(row.data) } : { toDate: () => new Date() },
+          responsavelUid: row.responsavel_uid || "",
+          responsavelNome: usersMap.get(row.responsavel_uid || "") || "Não encontrado",
+          descricao: row.descricao,
+          dadosHospital: row.dados_hospital || undefined,
+          proximoContato: row.proximo_contato ? { toDate: () => new Date(row.proximo_contato) } : undefined,
+          observacoes: row.observacoes || "",
+          dataCriacao: row.data_criacao ? { toDate: () => new Date(row.data_criacao) } : { toDate: () => new Date() },
+          unidadeId: row.unidade_id,
+        }));
 
         setAcompanhamentos(data);
       } catch (error) {
@@ -131,7 +179,7 @@ export default function MembroDetalhesPage() {
     };
 
     loadAcompanhamentos();
-  }, [params.id, igrejaId, membroUnidadeId]);
+  }, [params.id, igrejaId, membroUnidadeId, membro]);
 
   const formatPhone = (phone: string) => {
     if (phone.length === 11) {

@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { addDoc, updateDoc, Timestamp, getDocs, query, orderBy } from "firebase/firestore";
-import { getFamiliasCollection, getFamiliaDoc, getMembrosCollection } from "@/lib/firestore";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,27 +130,24 @@ export function FamiliaForm({ familia, unidadeIdParam, onSuccess }: FamiliaFormP
       
       setLoadingMembros(true);
       try {
-        const allMembros: MembroSimples[] = [];
+        const { data, error } = await supabase
+          .from("membros")
+          .select("id, nome, telefone, unidade_id")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis)
+          .eq("situacao", "ativo")
+          .order("nome", { ascending: true });
+
+        if (error) throw error;
         
-        for (const unidId of unidadesAcessiveis) {
-          const membrosRef = getMembrosCollection(igrejaId, unidId);
-          const q = query(membrosRef, orderBy("nome", "asc"));
-          const snapshot = await getDocs(q);
-          
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            if (data.ativo !== false) {
-              allMembros.push({
-                id: doc.id,
-                nome: data.nome,
-                telefone: data.telefone,
-                unidadeId: unidId,
-              });
-            }
-          });
-        }
+        const allMembros: MembroSimples[] = (data || []).map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          telefone: row.telefone || "",
+          unidadeId: row.unidade_id,
+        }));
         
-        setMembros(allMembros.sort((a, b) => a.nome.localeCompare(b.nome)));
+        setMembros(allMembros);
       } catch (error) {
         console.error("Erro ao carregar membros:", error);
         toast.error("Erro ao carregar lista de membros");
@@ -172,7 +168,7 @@ export function FamiliaForm({ familia, unidadeIdParam, onSuccess }: FamiliaFormP
       responsavel2Id: familia?.responsavel2Id || "",
       dependentes: familia?.dependentes?.map(d => ({
         ...d,
-        dataNascimento: d.dataNascimento?.toDate(),
+        dataNascimento: d.dataNascimento ? (typeof d.dataNascimento.toDate === "function" ? d.dataNascimento.toDate() : new Date(d.dataNascimento as any)) : undefined,
         vinculadoAMembro: !!d.membroVinculadoId,
       })) || [],
       observacoes: familia?.observacoes || "",
@@ -257,44 +253,45 @@ export function FamiliaForm({ familia, unidadeIdParam, onSuccess }: FamiliaFormP
 
       const familiaData = {
         nome: data.nome.trim(),
-        responsavel1Id: data.responsavel1Id,
-        responsavel1Nome: responsavel1?.nome || "",
-        responsavel2Id: data.responsavel2Id || null,
-        responsavel2Nome: responsavel2?.nome || null,
+        responsavel_1_id: data.responsavel1Id,
+        responsavel_2_id: data.responsavel2Id || null,
         dependentes: data.dependentes.map(dep => ({
           id: dep.id,
           nome: dep.vinculadoAMembro && dep.membroVinculadoNome ? dep.membroVinculadoNome : dep.nome.trim(),
-          dataNascimento: dep.dataNascimento ? (() => {
-            const d = dep.dataNascimento;
-            const dateAtNoon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
-            return Timestamp.fromDate(dateAtNoon);
-          })() : null,
+          dataNascimento: dep.dataNascimento ? new Date(dep.dataNascimento.getFullYear(), dep.dataNascimento.getMonth(), dep.dataNascimento.getDate(), 12, 0, 0).toISOString() : null,
           sexo: dep.sexo || null,
           parentesco: dep.parentesco,
           membroVinculadoId: dep.vinculadoAMembro ? dep.membroVinculadoId : null,
           membroVinculadoNome: dep.vinculadoAMembro ? dep.membroVinculadoNome : null,
         })),
         observacoes: data.observacoes || null,
-        unidadeId: selectedUnidadeId,
+        unidade_id: selectedUnidadeId,
+        igreja_id: igrejaId,
         ativo: true,
       };
 
       if (familia) {
         // Atualizar
-        const familiaRef = getFamiliaDoc(igrejaId, unidadeIdParam || selectedUnidadeId, familia.id);
-        await updateDoc(familiaRef, {
-          ...familiaData,
-          dataAtualizacao: Timestamp.now(),
-        });
+        const { error } = await supabase
+          .from("familias")
+          .update({
+            ...familiaData,
+            data_atualizacao: new Date().toISOString(),
+          })
+          .eq("id", familia.id);
+
+        if (error) throw error;
         toast.success("Família atualizada com sucesso!");
       } else {
         // Criar
-        const familiasRef = getFamiliasCollection(igrejaId, selectedUnidadeId);
-        await addDoc(familiasRef, {
-          ...familiaData,
-          dataCriacao: Timestamp.now(),
-          criadoPor: user.uid,
-        });
+        const { error } = await supabase
+          .from("familias")
+          .insert({
+            ...familiaData,
+            criado_por: user.uid,
+          });
+
+        if (error) throw error;
         toast.success("Família cadastrada com sucesso!");
       }
 
