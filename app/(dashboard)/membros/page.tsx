@@ -336,11 +336,11 @@ export default function MembrosPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {canEdit && igrejaId && unidadeSelecionada && (
+          {canEdit && igrejaId && (
             <QRCodeModal
-              url={`${typeof window !== "undefined" ? window.location.origin : ""}/cadastro/membro?igreja=${igrejaId}&unidade=${unidadeSelecionada.id}`}
+              url={`${typeof window !== "undefined" ? window.location.origin : ""}/cadastro/membro?igreja=${igrejaId}${unidadeSelecionada ? `&unidade=${unidadeSelecionada.id}` : ""}`}
               title="Cadastro de Membro"
-              description={`Cadastro para: ${unidadeSelecionada.nome}`}
+              description={unidadeSelecionada ? `Cadastro para congregação: ${unidadeSelecionada.nome}` : "Cadastro para a Igreja (Membro poderá selecionar sua congregação)"}
               triggerLabel="QR Code Membro"
             />
           )}

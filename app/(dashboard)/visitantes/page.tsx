@@ -240,11 +240,11 @@ export default function VisitantesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {igrejaId && unidadeAtual && (
+          {igrejaId && (
             <QRCodeModal
-              url={`${typeof window !== "undefined" ? window.location.origin : ""}/cadastro/visitante?igreja=${igrejaId}&unidade=${unidadeAtual.id}`}
+              url={`${typeof window !== "undefined" ? window.location.origin : ""}/cadastro/visitante?igreja=${igrejaId}${unidadeAtual ? `&unidade=${unidadeAtual.id}` : ""}`}
               title="Cadastro de Visitante"
-              description={`Cadastro para: ${unidadeAtual.nome}`}
+              description={unidadeAtual ? `Cadastro para congregação: ${unidadeAtual.nome}` : "Cadastro para a Igreja (Visitante poderá selecionar a congregação)"}
               triggerLabel="QR Code Visitante"
             />
           )}

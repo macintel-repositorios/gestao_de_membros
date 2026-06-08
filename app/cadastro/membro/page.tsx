@@ -574,11 +574,16 @@ function CadastroMembroContent() {
         </div>
 
         {isEditMode && (
-          <div className="flex items-center justify-between p-4 bg-primary/10 border border-primary/20 rounded-lg">
-            <span className="text-sm font-medium text-primary flex items-center gap-2 text-left">
+          <div className="flex flex-col p-4 bg-primary/10 border border-primary/20 rounded-lg text-left gap-1.5">
+            <span className="text-sm font-medium text-primary flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>Atualizando cadastro de: <strong>{nome}</strong></span>
+              <span>Atualize as informações de: <strong>{nome}</strong></span>
             </span>
+            {igrejaInfo && (
+              <span className="text-xs text-muted-foreground ml-6">
+                Igreja: <strong className="text-foreground">{igrejaInfo.nome}</strong>
+              </span>
+            )}
           </div>
         )}
 
