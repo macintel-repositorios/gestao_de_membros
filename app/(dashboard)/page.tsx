@@ -30,6 +30,21 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TIPOS_MEMBRO, CORES_TIPO, TIPOS_UNIDADE, type TipoMembro, type Membro, type Igreja } from "@/lib/types";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  BarChart,
+  Bar,
+  Cell,
+  PieChart,
+  Pie,
+  Legend,
+} from "recharts";
 
 interface DashboardStats {
   totalMembros: number;
@@ -39,6 +54,9 @@ interface DashboardStats {
   ultimosCadastros: number;
   aniversariantesHoje: Membro[];
   aniversariantesSemana: Membro[];
+  growthData: { mes: string; quantidade: number }[];
+  genderData: { name: string; value: number }[];
+  unitData: { name: string; value: number }[];
 }
 
 export default function DashboardPage() {
@@ -104,6 +122,25 @@ export default function DashboardPage() {
         const aniversariantesHoje: Membro[] = [];
         const aniversariantesSemana: Membro[] = [];
 
+        // Chart data structures
+        const monthsMap: Record<string, number> = {};
+        const last6MonthsList: string[] = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date();
+          d.setMonth(d.getMonth() - i);
+          const label = d.toLocaleDateString("pt-BR", { month: "short" });
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          monthsMap[key] = 0;
+          last6MonthsList.push(label);
+        }
+
+        let masc = 0;
+        let fem = 0;
+        const membersByUnit: Record<string, number> = {};
+        targetUnidadesIds.forEach(id => {
+          membersByUnit[id] = 0;
+        });
+
         if (targetUnidadesIds.length > 0 && targetUnidadesIds[0] !== "none") {
           // Busca todos os membros das unidades alvo
           const { data: membrosData, error: membrosError } = await supabase
@@ -122,9 +159,28 @@ export default function DashboardPage() {
               porTipo[tipo]++;
             }
             
-            const dataCriacao = new Date(row.data_criacao);
-            if (dataCriacao > thirtyDaysAgo) {
+            const dataCriacaoObj = new Date(row.data_criacao);
+            if (dataCriacaoObj > thirtyDaysAgo) {
               ultimosCadastros++;
+            }
+
+            // Gender
+            if (row.sexo === "masculino") masc++;
+            if (row.sexo === "feminino") fem++;
+
+            // Unit
+            if (row.unidade_id) {
+              membersByUnit[row.unidade_id] = (membersByUnit[row.unidade_id] || 0) + 1;
+            }
+
+            // Growth
+            const dateStr = row.data_cadastro || row.data_criacao;
+            if (dateStr) {
+              const dateObj = new Date(dateStr);
+              const key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+              if (key in monthsMap) {
+                monthsMap[key]++;
+              }
             }
             
             // Check birthdays
@@ -172,6 +228,24 @@ export default function DashboardPage() {
           }
         }
 
+        const growthData = Object.keys(monthsMap).sort().map((key, index) => {
+          const monthLabel = last6MonthsList[index];
+          return { mes: monthLabel, quantidade: monthsMap[key] };
+        });
+
+        const genderData = [
+          { name: "Masculino", value: masc },
+          { name: "Feminino", value: fem },
+        ];
+
+        const unitData = Object.keys(membersByUnit).map(id => {
+          const unitObj = todasUnidades.find(u => u.id === id);
+          return {
+            name: unitObj ? unitObj.nome : "Outra",
+            value: membersByUnit[id]
+          };
+        });
+
         setStats({
           totalMembros,
           porTipo,
@@ -180,6 +254,9 @@ export default function DashboardPage() {
           ultimosCadastros,
           aniversariantesHoje,
           aniversariantesSemana,
+          growthData,
+          genderData,
+          unitData,
         });
       } catch (error) {
         console.error("Erro ao carregar estatísticas:", error);
@@ -427,44 +504,126 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      {/* Members by Type */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Membros por Tipo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex gap-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-20 w-32" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-              {(Object.keys(TIPOS_MEMBRO) as TipoMembro[]).map((tipo) => (
-                <div
-                  key={tipo}
-                  className="flex flex-col items-center rounded-lg border bg-card p-4 text-center"
+      {/* Charts Grid */}
+      {!loading && stats && (
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Growth Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Crescimento do Ministério</CardTitle>
+              <p className="text-xs text-muted-foreground">Novos cadastros nos últimos 6 meses</p>
+            </CardHeader>
+            <CardContent className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.growthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorQty" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/40" />
+                  <XAxis dataKey="mes" className="text-xs fill-muted-foreground" />
+                  <YAxis className="text-xs fill-muted-foreground" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
+                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                  />
+                  <Area type="monotone" dataKey="quantidade" name="Novos Membros" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorQty)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Classification Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Membros por Classificação</CardTitle>
+              <p className="text-xs text-muted-foreground">Distribuição atual dos membros e visitantes</p>
+            </CardHeader>
+            <CardContent className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={Object.keys(TIPOS_MEMBRO).map((tipo) => ({
+                    name: TIPOS_MEMBRO[tipo as TipoMembro],
+                    quantidade: stats.porTipo[tipo as TipoMembro] || 0,
+                    tipo: tipo,
+                  }))}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
-                  <Badge
-                    variant="secondary"
-                    className="mb-2"
-                    style={{
-                      backgroundColor: `var(--type-${tipo})`,
-                      color: "white",
-                    }}
-                  >
-                    {TIPOS_MEMBRO[tipo]}
-                  </Badge>
-                  <span className="text-2xl font-bold">
-                    {stats?.porTipo[tipo] || 0}
-                  </span>
-                </div>
-              ))}
-            </div>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/40" />
+                  <XAxis dataKey="name" className="text-xs fill-muted-foreground" />
+                  <YAxis className="text-xs fill-muted-foreground" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
+                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                  />
+                  <Bar dataKey="quantidade" name="Quantidade" radius={[4, 4, 0, 0]}>
+                    {Object.keys(TIPOS_MEMBRO).map((tipo, idx) => (
+                      <Cell key={`cell-${idx}`} fill={CORES_TIPO[tipo as TipoMembro] || "#6366f1"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Unit Distribution Chart */}
+          {stats.unitData.length > 1 && (
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">Distribuição por Congregação</CardTitle>
+                <p className="text-xs text-muted-foreground">Quantidade de membros por congregação/unidade</p>
+              </CardHeader>
+              <CardContent className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.unitData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted/40" />
+                    <XAxis dataKey="name" className="text-xs fill-muted-foreground" />
+                    <YAxis className="text-xs fill-muted-foreground" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
+                      labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                    />
+                    <Bar dataKey="value" name="Membros" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+
+          {/* Gender Chart */}
+          <Card className={stats.unitData.length <= 1 ? "md:col-span-2" : ""}>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Distribuição por Gênero</CardTitle>
+              <p className="text-xs text-muted-foreground">Percentual masculino e feminino</p>
+            </CardHeader>
+            <CardContent className="h-[280px] flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={stats.genderData.filter(d => d.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={85}
+                    paddingAngle={5}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#ec4899" />
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid gap-4 md:grid-cols-2">
