@@ -38,15 +38,22 @@ import {
 } from "@/lib/types";
 
 export default function MapaPage() {
-  const { igrejaId, unidadesAcessiveis } = useAuth();
+  const { igrejaId, unidadesAcessiveis, todasUnidades } = useAuth();
   const [membros, setMembros] = useState<Membro[]>([]);
+  const [visitantes, setVisitantes] = useState<any[]>([]);
   const [igreja, setIgreja] = useState<Igreja | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Custom unit coordinates lookup state
+  const [unidadesCoords, setUnidadesCoords] = useState<Record<string, { lat: number; lng: number }>>({});
+  
+  // Filters
+  const [filterUnidadeId, setFilterUnidadeId] = useState<string>("todos");
   const [filterTipo, setFilterTipo] = useState<TipoMembro | "todos">("todos");
   const [filterCargo, setFilterCargo] = useState<CargoMembro | "todos">("todos");
   const [filterBairro, setFilterBairro] = useState<string>("todos");
   const [selectedMembro, setSelectedMembro] = useState<Membro | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
 
   // Load church data
   useEffect(() => {
@@ -90,22 +97,24 @@ export default function MapaPage() {
     loadIgreja();
   }, [igrejaId]);
 
-  // Load members from all accessible units
+  // Load members, visitors and geocode units
   useEffect(() => {
     if (!igrejaId || unidadesAcessiveis.length === 0) {
       setLoading(false);
       return;
     }
 
-    const loadMembros = async () => {
+    const loadDados = async () => {
       try {
-        const { data: membrosData, error } = await supabase
+        setLoading(true);
+        // 1. Fetch Members
+        const { data: membrosData, error: membrosErr } = await supabase
           .from("membros")
           .select("*")
           .eq("igreja_id", igrejaId)
           .in("unidade_id", unidadesAcessiveis);
         
-        if (error) throw error;
+        if (membrosErr) throw membrosErr;
 
         const mapeados = (membrosData || []).map((m) => ({
           id: m.id,
@@ -134,32 +143,124 @@ export default function MapaPage() {
             lng: m.longitude ? Number(m.longitude) : -46.633308,
           },
         }));
-        
+
         setMembros(mapeados as any);
+
+        // 2. Fetch Visitors
+        const { data: visitantesData, error: visitantesErr } = await supabase
+          .from("visitantes")
+          .select("*")
+          .eq("igreja_id", igrejaId)
+          .in("unidade_id", unidadesAcessiveis);
+
+        if (!visitantesErr && visitantesData) {
+          setVisitantes(visitantesData);
+        }
+
+        // 3. Resolve Unit Coordinates (Geocode or fallback to members average/main church)
+        const coordsTemp: Record<string, { lat: number; lng: number }> = {};
+        const unidadesAcessiveisObjs = todasUnidades.filter(u => unidadesAcessiveis.includes(u.id));
+
+        for (const u of unidadesAcessiveisObjs) {
+          // Fallback coordinate: center of members in this unit or main church
+          const unitMembers = mapeados.filter(m => m.unidadeId === u.id);
+          let baseLat = -23.55052;
+          let baseLng = -46.633308;
+
+          if (unitMembers.length > 0) {
+            baseLat = unitMembers.reduce((sum, m) => sum + m.coordenadas.lat, 0) / unitMembers.length;
+            baseLng = unitMembers.reduce((sum, m) => sum + m.coordenadas.lng, 0) / unitMembers.length;
+          } else if (igreja?.coordenadas) {
+            baseLat = igreja.coordenadas.lat;
+            baseLng = igreja.coordenadas.lng;
+          }
+
+          // Let's check if the unit has address fields to geocode
+          if (u.endereco?.logradouro && u.endereco?.cidade) {
+            try {
+              const fullAddress = `${u.endereco.logradouro}, ${u.endereco.numero || ""}, ${u.endereco.bairro || ""}, ${u.endereco.cidade} - ${u.endereco.estado || ""}`;
+              const geoRes = await fetch("/api/geocode", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ endereco: fullAddress }),
+              });
+              const geoData = await geoRes.json();
+              if (geoData.lat && geoData.lng) {
+                baseLat = geoData.lat;
+                baseLng = geoData.lng;
+              }
+            } catch (e) {
+              console.error("Geocoding failed for unit: " + u.nome, e);
+            }
+          }
+
+          coordsTemp[u.id] = { lat: baseLat, lng: baseLng };
+        }
+        setUnidadesCoords(coordsTemp);
+
       } catch (error) {
-        console.error("Erro ao carregar membros:", error);
+        console.error("Erro ao carregar dados:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    loadMembros();
-  }, [igrejaId, unidadesAcessiveis]);
+    loadDados();
+  }, [igrejaId, unidadesAcessiveis, todasUnidades, igreja]);
+
+  // Combine members and filtered visitors for the map
+  // To show visitors on the map, we represent them as Membro objects but with tipo: 'visitante'
+  const mappedVisitors = visitantes.map((v) => {
+    // Determine center coordinate for the visitor's unit
+    const unitCoord = unidadesCoords[v.unidade_id] || { lat: -23.55052, lng: -46.633308 };
+    // Add small random noise to prevent stacking directly on unit ground zero
+    const offsetLat = (Math.random() - 0.5) * 0.0015;
+    const offsetLng = (Math.random() - 0.5) * 0.0015;
+
+    return {
+      id: v.id,
+      unidadeId: v.unidade_id,
+      nome: v.nome + " (Visitante)",
+      telefone: v.telefone || "",
+      email: "",
+      fotoUrl: "",
+      dataNascimento: v.data_nascimento || "",
+      estadoCivil: "",
+      dataBatismo: "",
+      cargo: "",
+      tipo: "visitante" as TipoMembro,
+      sexo: "",
+      endereco: {
+        logradouro: "",
+        numero: "",
+        complemento: "",
+        bairro: "",
+        cidade: "",
+        estado: "",
+        cep: "",
+      },
+      coordenadas: {
+        lat: unitCoord.lat + offsetLat,
+        lng: unitCoord.lng + offsetLng,
+      },
+    };
+  });
+
+  const todosMapeadosNoMapa = [...membros, ...mappedVisitors];
 
   // Get unique bairros
   const bairros = Array.from(
-    new Set(membros.map((m) => m.endereco?.bairro).filter(Boolean))
+    new Set(todosMapeadosNoMapa.map((m) => m.endereco?.bairro).filter(Boolean))
   ).sort();
 
-  // Filter members
-  const filteredMembros = membros.filter((membro) => {
+  // Filter members/visitors based on unit and other filters
+  const filteredMembros = todosMapeadosNoMapa.filter((membro) => {
+    const matchesUnidade = filterUnidadeId === "todos" || membro.unidadeId === filterUnidadeId;
     const matchesTipo = filterTipo === "todos" || membro.tipo === filterTipo;
-    const matchesCargo =
-      filterCargo === "todos" || membro.cargo === filterCargo;
-    const matchesBairro =
-      filterBairro === "todos" || membro.endereco?.bairro === filterBairro;
+    const matchesCargo = filterCargo === "todos" || membro.cargo === filterCargo;
+    const matchesBairro = filterBairro === "todos" || membro.endereco?.bairro === filterBairro;
 
-    return matchesTipo && matchesCargo && matchesBairro;
+    return matchesUnidade && matchesTipo && matchesCargo && matchesBairro;
   });
 
   const handleMemberClick = useCallback((membro: Membro) => {
@@ -167,12 +268,14 @@ export default function MapaPage() {
   }, []);
 
   const clearFilters = () => {
+    setFilterUnidadeId("todos");
     setFilterTipo("todos");
     setFilterCargo("todos");
     setFilterBairro("todos");
   };
 
   const hasActiveFilters =
+    filterUnidadeId !== "todos" ||
     filterTipo !== "todos" ||
     filterCargo !== "todos" ||
     filterBairro !== "todos";
@@ -183,6 +286,7 @@ export default function MapaPage() {
     }
     return phone;
   };
+
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
@@ -222,7 +326,29 @@ export default function MapaPage() {
       {/* Filters */}
       {showFilters && (
         <Card>
-          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:flex-wrap">
+            {/* Unit/Church select filter */}
+            {todasUnidades && (
+              <Select
+                value={filterUnidadeId}
+                onValueChange={setFilterUnidadeId}
+              >
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue placeholder="Selecionar Igreja" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas as igrejas/unidades</SelectItem>
+                  {todasUnidades
+                    .filter((u) => unidadesAcessiveis.includes(u.id))
+                    .map((unidade) => (
+                      <SelectItem key={unidade.id} value={unidade.id}>
+                        {unidade.nome} ({unidade.tipo.toUpperCase()})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
+
             <Select
               value={filterTipo}
               onValueChange={(v) => setFilterTipo(v as TipoMembro | "todos")}
@@ -296,6 +422,15 @@ export default function MapaPage() {
           <GoogleMap
             membros={filteredMembros}
             igreja={igreja || undefined}
+            selectedUnidade={
+              filterUnidadeId !== "todos"
+                ? {
+                    id: filterUnidadeId,
+                    nome: todasUnidades.find((u) => u.id === filterUnidadeId)?.nome || "",
+                    coordenadas: unidadesCoords[filterUnidadeId],
+                  }
+                : undefined
+            }
             onMemberClick={handleMemberClick}
             selectedMemberId={selectedMembro?.id}
           />

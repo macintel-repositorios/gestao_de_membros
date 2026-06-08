@@ -7,6 +7,11 @@ import { Membro, Igreja, TIPOS_MEMBRO, CARGOS_MEMBRO, CORES_TIPO } from "@/lib/t
 interface GoogleMapProps {
   membros: Membro[];
   igreja?: Igreja;
+  selectedUnidade?: {
+    id: string;
+    nome: string;
+    coordenadas?: { lat: number; lng: number };
+  };
   onMemberClick?: (membro: Membro) => void;
   selectedMemberId?: string | null;
   centerMemberId?: string | null;
@@ -17,6 +22,7 @@ interface GoogleMapProps {
 export function GoogleMap({
   membros,
   igreja,
+  selectedUnidade,
   onMemberClick,
   selectedMemberId,
   centerMemberId,
@@ -48,9 +54,11 @@ export function GoogleMap({
         // Default center (São Paulo)
         const defaultCenter = { lat: -23.5505, lng: -46.6333 };
 
-        // Calculate center - prioritize church as "marco zero"
+        // Calculate center - prioritize selectedUnidade or church as "marco zero"
         let center = defaultCenter;
-        if (igreja?.coordenadas) {
+        if (selectedUnidade?.coordenadas) {
+          center = { lat: selectedUnidade.coordenadas.lat, lng: selectedUnidade.coordenadas.lng };
+        } else if (igreja?.coordenadas) {
           center = { lat: igreja.coordenadas.lat, lng: igreja.coordenadas.lng };
         } else if (membros.length > 0) {
           const avgLat =
@@ -71,6 +79,13 @@ export function GoogleMap({
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
+          styles: [
+            {
+              featureType: "poi",
+              elementType: "labels",
+              stylers: [{ visibility: "off" }]
+            }
+          ]
         });
 
         setIsLoaded(true);
@@ -81,6 +96,19 @@ export function GoogleMap({
 
     initMap();
   }, []);
+
+  // Update map center when selectedUnidade changes
+  useEffect(() => {
+    if (!isLoaded || !googleMapRef.current) return;
+
+    if (selectedUnidade?.coordenadas) {
+      googleMapRef.current.setCenter({
+        lat: selectedUnidade.coordenadas.lat,
+        lng: selectedUnidade.coordenadas.lng,
+      });
+      googleMapRef.current.setZoom(15);
+    }
+  }, [selectedUnidade, isLoaded]);
 
   // Create marker element
   const createMarkerElement = useCallback(
@@ -213,7 +241,8 @@ export function GoogleMap({
       igrejaMarkerRef.current = null;
     }
 
-    if (!igreja?.coordenadas) return;
+    const targetCoords = selectedUnidade?.coordenadas || igreja?.coordenadas;
+    if (!targetCoords) return;
 
     // Create church marker element
     const markerDiv = document.createElement("div");
@@ -242,12 +271,12 @@ export function GoogleMap({
 
     igrejaMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
       map: googleMapRef.current,
-      position: { lat: igreja.coordenadas.lat, lng: igreja.coordenadas.lng },
+      position: { lat: targetCoords.lat, lng: targetCoords.lng },
       content: markerDiv,
-      title: igreja.nome || "Igreja",
+      title: selectedUnidade?.nome || igreja?.nome || "Igreja",
       zIndex: 1000, // Ensure church marker is on top
     });
-  }, [igreja, isLoaded]);
+  }, [igreja, selectedUnidade, isLoaded]);
 
   // Handle radius circle
   useEffect(() => {
@@ -302,20 +331,26 @@ export function GoogleMap({
   }, [centerMemberId, radius, membros, isLoaded, onMembersInRadius]);
 
   return (
-    <div className="relative h-full w-full">
-      <div ref={mapRef} className="h-full w-full rounded-lg" />
+    <div className="flex h-full w-full flex-col gap-3">
+      {/* Map Area */}
+      <div className="min-h-0 flex-1 relative">
+        <div ref={mapRef} className="h-full w-full rounded-lg" />
+      </div>
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 rounded-lg bg-background/95 p-4 shadow-lg backdrop-blur">
-        <p className="mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Legenda
-        </p>
-        <div className="flex flex-col gap-2">
+      {/* Legend Footer */}
+      <div className="rounded-lg border bg-card p-3 shadow-sm flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2 border-r pr-3 shrink-0">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Legenda:
+          </span>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4 text-xs">
           {/* Church marker */}
-          {igreja && (
-            <div className="flex items-center gap-2 pb-2 mb-2 border-b">
+          {(igreja || selectedUnidade) && (
+            <div className="flex items-center gap-2">
               <div
-                className="h-5 w-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center"
+                className="h-5 w-5 rounded-full border border-white shadow-sm flex items-center justify-center"
                 style={{ background: "linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)" }}
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -323,20 +358,23 @@ export function GoogleMap({
                   <path d="M10 9h4"/>
                 </svg>
               </div>
-              <span className="text-xs font-medium">Igreja (Marco Zero)</span>
+              <span className="font-semibold text-primary truncate max-w-[200px]">
+                {selectedUnidade ? selectedUnidade.nome : "Igreja Sede"} (Marco Zero)
+              </span>
             </div>
           )}
+
           {Object.entries(TIPOS_MEMBRO).map(([tipo, label]) => (
             <div key={tipo} className="flex items-center gap-2">
               <div
-                className="h-5 w-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center"
+                className="h-5 w-5 rounded-full border border-white shadow-sm flex items-center justify-center"
                 style={{ backgroundColor: CORES_TIPO[tipo as keyof typeof CORES_TIPO] }}
               >
-                <span className="text-[8px] font-bold text-white">
+                <span className="text-[9px] font-bold text-white uppercase">
                   {label.charAt(0)}
                 </span>
               </div>
-              <span className="text-xs font-medium">{label}</span>
+              <span className="font-medium text-muted-foreground">{label}</span>
             </div>
           ))}
         </div>
