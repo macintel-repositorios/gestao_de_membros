@@ -19,6 +19,19 @@ export default function DashboardLayout({
   const router = useRouter();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
+  const [takingTooLong, setTakingTooLong] = useState(false);
+
+  useEffect(() => {
+    if (!loading) {
+      setTakingTooLong(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTakingTooLong(true);
+    }, 6000); // 6 segundos
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   useEffect(() => {
     // Só executa quando loading terminou
     if (loading || !isConfigured) return;
@@ -42,12 +55,26 @@ export default function DashboardLayout({
   // Enquanto carrega OU redirecionando, mostra loading
   if (loading || isRedirecting) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Spinner className="h-8 w-8 text-primary" />
-          <p className="text-sm text-muted-foreground">
+      <div className="flex h-screen flex-col items-center justify-center bg-background px-4 text-center">
+        <div className="flex flex-col items-center gap-4 max-w-md">
+          <Spinner className="h-10 w-10 text-primary" />
+          <p className="text-lg font-medium text-foreground">
             Carregando...
           </p>
+          {takingTooLong && (
+            <div className="mt-4 p-4 rounded-lg bg-muted border border-border text-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <p className="font-semibold text-foreground mb-1">A conexão está demorando mais do que o esperado</p>
+              <p className="text-muted-foreground text-xs mb-3">
+                Isso pode ocorrer devido a oscilações na rede ou porque o banco de dados (Supabase) está ativando após inatividade.
+              </p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-md shadow transition"
+              >
+                Recarregar Página
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

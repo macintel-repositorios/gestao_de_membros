@@ -93,62 +93,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let isMounted = true;
+
+    async function processarSession(session: any) {
+      const currentUser = session?.user ?? null;
+      if (!isMounted) return;
+      setUser(currentUser);
+
+      if (currentUser) {
+        try {
+          // Busca os dados adicionais do usuário na tabela do banco
+          const { data: userData, error } = await supabase
+            .from("usuarios")
+            .select("*")
+            .eq("id", currentUser.id)
+            .single();
+
+          if (!isMounted) return;
+
+          if (error) {
+            console.error("Erro ao buscar dados do usuário:", error);
+            // Caso o documento do usuário ainda não esteja criado
+            setUsuario(null);
+            setIgrejaId(null);
+            setUnidadeId(null);
+            setNivelAcesso(null);
+          } else if (userData) {
+            const u: Usuario = {
+              uid: userData.id,
+              nome: userData.nome,
+              telefone: userData.telefone,
+              email: userData.email,
+              nivelAcesso: userData.nivel_acesso as NivelAcesso,
+              igrejaId: userData.igreja_id || "",
+              unidadeId: userData.unidade_id || "",
+              ativo: userData.ativo,
+              dataCriacao: userData.data_criacao,
+            };
+            setUsuario(u);
+            setIgrejaId(u.igrejaId || null);
+            setUnidadeId(u.unidadeId || null);
+            setNivelAcesso(u.nivelAcesso || null);
+          }
+        } catch (err) {
+          console.error("Erro no processamento do usuário:", err);
+        }
+      } else {
+        setUsuario(null);
+        setIgrejaId(null);
+        setUnidadeId(null);
+        setNivelAcesso(null);
+        setUnidadesAcessiveis([]);
+        setTodasUnidades([]);
+        setUnidadeAtual(null);
+      }
+      setLoading(false);
+    }
+
+    // Busca a sessão inicial de forma assíncrona
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isMounted) {
+        processarSession(session);
+      }
+    }).catch((err) => {
+      console.error("Erro ao obter sessão inicial:", err);
+      if (isMounted) {
+        setLoading(false);
+      }
+    });
+
     // Monitora alterações no estado de autenticação do Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-
-        if (currentUser) {
-          try {
-            // Busca os dados adicionais do usuário na tabela do banco
-            const { data: userData, error } = await supabase
-              .from("usuarios")
-              .select("*")
-              .eq("id", currentUser.id)
-              .single();
-
-            if (error) {
-              console.error("Erro ao buscar dados do usuário:", error);
-              // Caso o documento do usuário ainda não esteja criado
-              setUsuario(null);
-              setIgrejaId(null);
-              setUnidadeId(null);
-              setNivelAcesso(null);
-            } else if (userData) {
-              const u: Usuario = {
-                uid: userData.id,
-                nome: userData.nome,
-                telefone: userData.telefone,
-                email: userData.email,
-                nivelAcesso: userData.nivel_acesso as NivelAcesso,
-                igrejaId: userData.igreja_id || "",
-                unidadeId: userData.unidade_id || "",
-                ativo: userData.ativo,
-                dataCriacao: userData.data_criacao,
-              };
-              setUsuario(u);
-              setIgrejaId(u.igrejaId || null);
-              setUnidadeId(u.unidadeId || null);
-              setNivelAcesso(u.nivelAcesso || null);
-            }
-          } catch (err) {
-            console.error("Erro no processamento do usuário:", err);
-          }
-        } else {
-          setUsuario(null);
-          setIgrejaId(null);
-          setUnidadeId(null);
-          setNivelAcesso(null);
-          setUnidadesAcessiveis([]);
-          setTodasUnidades([]);
-          setUnidadeAtual(null);
+        if (isMounted) {
+          await processarSession(session);
         }
-        setLoading(false);
       }
     );
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, [isConfigured]);
