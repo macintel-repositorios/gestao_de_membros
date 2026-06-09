@@ -48,10 +48,14 @@ export default function MapaPage() {
   const [unidadesCoords, setUnidadesCoords] = useState<Record<string, { lat: number; lng: number }>>({});
   
   // Filters
-  const [filterUnidadeId, setFilterUnidadeId] = useState<string>("todos");
+  const [filterUnidadeId, setFilterUnidadeId] = useState<string>("");
   const [filterTipo, setFilterTipo] = useState<TipoMembro | "todos">("todos");
   const [filterCargo, setFilterCargo] = useState<CargoMembro | "todos">("todos");
   const [filterBairro, setFilterBairro] = useState<string>("todos");
+  const [filterGrupo, setFilterGrupo] = useState<string>("todos");
+  const [filterFamilia, setFilterFamilia] = useState<string>("todos");
+  const [grupos, setGrupos] = useState<{ id: string; nome: string }[]>([]);
+  const [familias, setFamilias] = useState<any[]>([]);
   const [selectedMembro, setSelectedMembro] = useState<Membro | null>(null);
   const [showFilters, setShowFilters] = useState(true);
 
@@ -87,6 +91,10 @@ export default function MapaPage() {
               estado: igrejaData.estado || "",
               cep: igrejaData.cep || "",
             },
+            coordenadas: (igrejaData.latitude && igrejaData.longitude) ? {
+              lat: Number(igrejaData.latitude),
+              lng: Number(igrejaData.longitude),
+            } : undefined,
           } as any);
         }
       } catch (error) {
@@ -129,6 +137,7 @@ export default function MapaPage() {
           cargo: m.cargo || "",
           tipo: m.tipo as TipoMembro,
           sexo: m.sexo || "",
+          grupoId: m.grupo_id,
           endereco: {
             logradouro: m.logradouro || "",
             numero: m.numero || "",
@@ -198,6 +207,26 @@ export default function MapaPage() {
         }
         setUnidadesCoords(coordsTemp);
 
+        // 4. Fetch Groups
+        const { data: gruposData } = await supabase
+          .from("grupos")
+          .select("id, nome")
+          .eq("igreja_id", igrejaId)
+          .eq("ativo", true);
+        if (gruposData) {
+          setGrupos(gruposData);
+        }
+
+        // 5. Fetch Families
+        const { data: familiasData } = await supabase
+          .from("familias")
+          .select("id, nome, responsavel_1_id, responsavel_2_id, dependentes")
+          .eq("igreja_id", igrejaId)
+          .eq("ativo", true);
+        if (familiasData) {
+          setFamilias(familiasData);
+        }
+
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
       } finally {
@@ -254,13 +283,35 @@ export default function MapaPage() {
   ).sort();
 
   // Filter members/visitors based on unit and other filters
-  const filteredMembros = todosMapeadosNoMapa.filter((membro) => {
+  const filteredMembros = !filterUnidadeId ? [] : todosMapeadosNoMapa.filter((membro) => {
     const matchesUnidade = filterUnidadeId === "todos" || membro.unidadeId === filterUnidadeId;
     const matchesTipo = filterTipo === "todos" || membro.tipo === filterTipo;
     const matchesCargo = filterCargo === "todos" || membro.cargo === filterCargo;
     const matchesBairro = filterBairro === "todos" || membro.endereco?.bairro === filterBairro;
+    
+    // Filter by Group
+    const matchesGrupo = filterGrupo === "todos" || (membro as any).grupoId === filterGrupo;
 
-    return matchesUnidade && matchesTipo && matchesCargo && matchesBairro;
+    // Filter by Family
+    let matchesFamilia = true;
+    if (filterFamilia !== "todos") {
+      const family = familias.find(f => f.id === filterFamilia);
+      if (family) {
+        const isMemberInFamily = (membroId: string, fam: any) => {
+          if (fam.responsavel_1_id === membroId) return true;
+          if (fam.responsavel_2_id === membroId) return true;
+          if (fam.dependentes && Array.isArray(fam.dependentes)) {
+            return fam.dependentes.some((dep: any) => dep.membroVinculadoId === membroId || dep.id === membroId);
+          }
+          return false;
+        };
+        matchesFamilia = isMemberInFamily(membro.id, family);
+      } else {
+        matchesFamilia = false;
+      }
+    }
+
+    return matchesUnidade && matchesTipo && matchesCargo && matchesBairro && matchesGrupo && matchesFamilia;
   });
 
   const handleMemberClick = useCallback((membro: Membro) => {
@@ -268,17 +319,21 @@ export default function MapaPage() {
   }, []);
 
   const clearFilters = () => {
-    setFilterUnidadeId("todos");
+    setFilterUnidadeId("");
     setFilterTipo("todos");
     setFilterCargo("todos");
     setFilterBairro("todos");
+    setFilterGrupo("todos");
+    setFilterFamilia("todos");
   };
 
   const hasActiveFilters =
-    filterUnidadeId !== "todos" ||
+    filterUnidadeId !== "" ||
     filterTipo !== "todos" ||
     filterCargo !== "todos" ||
-    filterBairro !== "todos";
+    filterBairro !== "todos" ||
+    filterGrupo !== "todos" ||
+    filterFamilia !== "todos";
 
   const formatPhone = (phone: string) => {
     if (phone.length === 11) {
@@ -321,7 +376,7 @@ export default function MapaPage() {
             Filtros
             {hasActiveFilters && (
               <Badge variant="default" className="ml-2">
-                {[filterTipo, filterCargo, filterBairro].filter(
+                {[filterTipo, filterCargo, filterBairro, filterGrupo, filterFamilia].filter(
                   (f) => f !== "todos"
                 ).length}
               </Badge>
@@ -365,6 +420,7 @@ export default function MapaPage() {
             <Select
               value={filterTipo}
               onValueChange={(v) => setFilterTipo(v as TipoMembro | "todos")}
+              disabled={!filterUnidadeId}
             >
               <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Tipo" />
@@ -382,6 +438,7 @@ export default function MapaPage() {
             <Select
               value={filterCargo}
               onValueChange={(v) => setFilterCargo(v as CargoMembro | "todos")}
+              disabled={!filterUnidadeId}
             >
               <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Cargo" />
@@ -396,7 +453,7 @@ export default function MapaPage() {
               </SelectContent>
             </Select>
 
-            <Select value={filterBairro} onValueChange={setFilterBairro}>
+            <Select value={filterBairro} onValueChange={setFilterBairro} disabled={!filterUnidadeId}>
               <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Bairro" />
               </SelectTrigger>
@@ -409,6 +466,38 @@ export default function MapaPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            {grupos.length > 0 && (
+              <Select value={filterGrupo} onValueChange={setFilterGrupo} disabled={!filterUnidadeId}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os grupos</SelectItem>
+                  {grupos.map((grupo) => (
+                    <SelectItem key={grupo.id} value={grupo.id}>
+                      {grupo.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {familias.length > 0 && (
+              <Select value={filterFamilia} onValueChange={setFilterFamilia} disabled={!filterUnidadeId}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Família" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas as famílias</SelectItem>
+                  {familias.map((familia) => (
+                    <SelectItem key={familia.id} value={familia.id}>
+                      {familia.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
