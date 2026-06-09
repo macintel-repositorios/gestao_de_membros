@@ -212,7 +212,7 @@ export default function MapaPage() {
           .from("grupos")
           .select("id, nome")
           .eq("igreja_id", igrejaId)
-          .eq("ativo", true);
+          .in("unidade_id", unidadesAcessiveis);
         if (gruposData) {
           setGrupos(gruposData);
         }
@@ -222,7 +222,7 @@ export default function MapaPage() {
           .from("familias")
           .select("id, nome, responsavel_1_id, responsavel_2_id, dependentes")
           .eq("igreja_id", igrejaId)
-          .eq("ativo", true);
+          .in("unidade_id", unidadesAcessiveis);
         if (familiasData) {
           setFamilias(familiasData);
         }
