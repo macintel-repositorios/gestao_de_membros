@@ -75,7 +75,7 @@ const ICONES_ACOMPANHAMENTO: Record<TipoAcompanhamento, React.ComponentType<{ cl
 };
 
 export default function AcompanhamentoPage() {
-  const { usuario, igrejaId, unidadesAcessiveis } = useAuth();
+  const { usuario, igrejaId, unidadesAcessiveis, igrejaNome } = useAuth();
   const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -209,8 +209,13 @@ export default function AcompanhamentoPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Acompanhamento Pastoral</h1>
-          <p className="text-muted-foreground">
-            Registre e acompanhe visitas, cultos no lar e aconselhamentos
+          <p className="text-muted-foreground flex flex-col gap-0.5">
+            <span>Registre e acompanhe visitas, cultos no lar e aconselhamentos</span>
+            {igrejaNome && (
+              <span className="text-xs text-muted-foreground mt-0.5">
+                Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+              </span>
+            )}
           </p>
         </div>
         {canCreate && (

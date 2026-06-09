@@ -112,18 +112,40 @@ export function GoogleMap({
 
   // Create marker element
   const createMarkerElement = useCallback(
-    (membro: Membro, isSelected: boolean, isCenter: boolean) => {
+    (membro: Membro, isSelected: boolean, isCenter: boolean, count: number) => {
       const markerDiv = document.createElement("div");
       markerDiv.className = "marker-container";
+      markerDiv.style.position = "relative";
 
       const color = CORES_TIPO[membro.tipo];
       const size = isCenter ? 48 : isSelected ? 44 : 36;
       const borderWidth = isCenter ? 4 : isSelected ? 3 : 2;
 
+      const badgeHTML = count > 1 ? `
+        <div style="
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          background-color: #ef4444;
+          color: white;
+          font-size: 10px;
+          font-weight: bold;
+          border-radius: 9999px;
+          padding: 1px 5px;
+          border: 1.5px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+          z-index: 10;
+          pointer-events: none;
+        ">
+          +${count - 1}
+        </div>
+      ` : '';
+
       // Se o membro tem foto, mostra a foto no marcador
       if (membro.fotoUrl) {
         markerDiv.innerHTML = `
         <div style="
+          position: relative;
           width: ${size}px;
           height: ${size}px;
           border: ${borderWidth}px solid ${color};
@@ -159,11 +181,13 @@ export function GoogleMap({
             ${membro.nome.charAt(0).toUpperCase()}
           </span>
         </div>
+        ${badgeHTML}
       `;
       } else {
         // Sem foto, mostra inicial
         markerDiv.innerHTML = `
         <div style="
+          position: relative;
           width: ${size}px;
           height: ${size}px;
           background-color: ${color};
@@ -186,6 +210,7 @@ export function GoogleMap({
             ${membro.nome.charAt(0).toUpperCase()}
           </span>
         </div>
+        ${badgeHTML}
       `;
       }
 
@@ -202,25 +227,54 @@ export function GoogleMap({
     markersRef.current.forEach((marker) => (marker.map = null));
     markersRef.current = [];
 
-    // Add markers for each member
+    // Group members by coordinates to avoid rendering overlapping markers
+    const groups: { key: string; membros: Membro[]; lat: number; lng: number }[] = [];
+    
     membros.forEach((membro) => {
-      const isSelected = selectedMemberId === membro.id;
-      const isCenter = centerMemberId === membro.id;
+      const lat = membro.coordenadas.lat;
+      const lng = membro.coordenadas.lng;
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      
+      const existing = groups.find(g => g.key === key);
+      if (existing) {
+        existing.membros.push(membro);
+      } else {
+        groups.push({ key, membros: [membro], lat, lng });
+      }
+    });
 
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: googleMapRef.current!,
-        position: { lat: membro.coordenadas.lat, lng: membro.coordenadas.lng },
-        content: createMarkerElement(membro, isSelected, isCenter),
-        title: membro.nome,
-      });
+    // Add markers for each group of coordinates
+    groups.forEach((group) => {
+      const count = group.membros.length;
+      
+      group.membros.forEach((membro, index) => {
+        const isSelected = selectedMemberId === membro.id;
+        const isCenter = centerMemberId === membro.id;
 
-      marker.addListener("click", () => {
-        if (onMemberClick) {
-          onMemberClick(membro);
+        // Arrange markers side-by-side horizontally if there are multiple members at the same address
+        let markerLat = group.lat;
+        let markerLng = group.lng;
+        if (count > 1) {
+          // Horizontal spacing of ~9 meters (approx. 0.00008 degrees)
+          const spacing = 0.00008; 
+          markerLng += (index - (count - 1) / 2) * spacing;
         }
-      });
 
-      markersRef.current.push(marker);
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: googleMapRef.current!,
+          position: { lat: markerLat, lng: markerLng },
+          content: createMarkerElement(membro, isSelected, isCenter, 1),
+          title: membro.nome + (count > 1 ? ` (${index + 1} de ${count})` : ""),
+        });
+
+        marker.addListener("click", () => {
+          if (onMemberClick) {
+            onMemberClick(membro);
+          }
+        });
+
+        markersRef.current.push(marker);
+      });
     });
   }, [
     membros,

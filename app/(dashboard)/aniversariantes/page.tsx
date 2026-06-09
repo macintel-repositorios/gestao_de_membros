@@ -17,7 +17,7 @@ import { ptBR } from "date-fns/locale";
 import { Membro, TIPOS_MEMBRO, CORES_TIPO, TipoMembro, CargoMembro } from "@/lib/types";
 
 export default function AniversariantesPage() {
-  const { igrejaId, unidadesAcessiveis } = useAuth();
+  const { igrejaId, unidadesAcessiveis, igrejaNome } = useAuth();
   const [membros, setMembros] = useState<Membro[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -162,8 +162,13 @@ export default function AniversariantesPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Aniversariantes</h1>
-        <p className="text-muted-foreground">
-          Acompanhe os aniversários dos membros da igreja
+        <p className="text-muted-foreground flex flex-col gap-0.5">
+          <span>Acompanhe os aniversários dos membros da igreja</span>
+          {igrejaNome && (
+            <span className="text-xs text-muted-foreground mt-0.5">
+              Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+            </span>
+          )}
         </p>
       </div>
 

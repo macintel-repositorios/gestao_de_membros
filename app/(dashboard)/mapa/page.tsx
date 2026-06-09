@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { GoogleMap } from "@/components/mapa/google-map";
@@ -38,7 +38,7 @@ import {
 } from "@/lib/types";
 
 export default function MapaPage() {
-  const { igrejaId, unidadesAcessiveis, todasUnidades } = useAuth();
+  const { igrejaId, unidadesAcessiveis, todasUnidades, igrejaNome } = useAuth();
   const [membros, setMembros] = useState<Membro[]>([]);
   const [visitantes, setVisitantes] = useState<any[]>([]);
   const [igreja, setIgreja] = useState<Igreja | null>(null);
@@ -286,7 +286,14 @@ export default function MapaPage() {
     }
     return phone;
   };
-
+  const membrosNoMesmoEndereco = useMemo(() => {
+    if (!selectedMembro) return [];
+    return filteredMembros.filter(
+      (m) =>
+        Math.abs(m.coordenadas.lat - selectedMembro.coordenadas.lat) < 0.00015 &&
+        Math.abs(m.coordenadas.lng - selectedMembro.coordenadas.lng) < 0.00015
+    );
+  }, [selectedMembro, filteredMembros]);
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
@@ -294,9 +301,15 @@ export default function MapaPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Mapa de Membros</h1>
-          <p className="text-muted-foreground">
-            {filteredMembros.length} membro
-            {filteredMembros.length !== 1 && "s"} no mapa
+          <p className="text-muted-foreground flex flex-col gap-0.5">
+            <span>
+              {filteredMembros.length} membro{filteredMembros.length !== 1 && "s"} no mapa
+            </span>
+            {igrejaNome && (
+              <span className="text-xs text-muted-foreground mt-0.5">
+                Igreja: <strong className="text-foreground">{igrejaNome}</strong>
+              </span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -447,6 +460,28 @@ export default function MapaPage() {
           {selectedMembro && (
             <ScrollArea className="h-[calc(100vh-8rem)] pr-4">
               <div className="space-y-6 py-4">
+                {/* Selector for multiple members at the same address */}
+                {membrosNoMesmoEndereco.length > 1 && (
+                  <div className="space-y-2 p-3 border rounded-lg bg-muted/40">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Membros neste endereço ({membrosNoMesmoEndereco.length}):
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                      {membrosNoMesmoEndereco.map((m) => (
+                        <Button
+                          key={m.id}
+                          variant={m.id === selectedMembro.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedMembro(m)}
+                          className="h-7 text-xs px-2.5"
+                        >
+                          {m.nome}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Name and Type */}
                 <div>
                   <h3 className="text-xl font-semibold">{selectedMembro.nome}</h3>
