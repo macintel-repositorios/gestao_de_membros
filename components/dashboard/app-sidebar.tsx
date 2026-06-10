@@ -77,11 +77,6 @@ const menuItems = [
     href: "/acompanhamento",
     icon: HeartHandshake,
   },
-  {
-    title: "Relatórios",
-    href: "/relatorios",
-    icon: BarChart3,
-  },
 ];
 
 const adminItems = [

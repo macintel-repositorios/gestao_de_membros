@@ -57,6 +57,7 @@ import {
   CalendarClock,
   Trash2,
   ChevronDown,
+  BarChart3,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -220,12 +221,20 @@ export default function AcompanhamentoPage() {
             )}
           </p>
         </div>
-        {canCreate && (
-          <Button onClick={() => setIsNovoOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Registro
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/acompanhamento/relatorios">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Relatórios
+            </Link>
           </Button>
-        )}
+          {canCreate && (
+            <Button onClick={() => setIsNovoOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Registro
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
