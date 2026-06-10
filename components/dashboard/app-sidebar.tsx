@@ -86,6 +86,11 @@ const adminItems = [
     icon: Church,
   },
   {
+    title: "Relatório Geral",
+    href: "/igreja/relatorio-geral",
+    icon: BarChart3,
+  },
+  {
     title: "Regional/Setor",
     href: "/unidades",
     icon: Building2,
