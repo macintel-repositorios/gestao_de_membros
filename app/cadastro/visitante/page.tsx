@@ -170,7 +170,7 @@ function CadastroVisitanteContent() {
         data_visita: format(new Date(), "yyyy-MM-dd"),
         primeira_visita: primeiraVisita,
         data_criacao: format(new Date(), "yyyy-MM-dd"),
-        criado_por: "formulario_publico",
+        criado_por: null,
         unidade_id: unidadeId,
         igreja_id: igrejaId,
         data_nascimento: dataNascimento || null,
@@ -179,7 +179,16 @@ function CadastroVisitanteContent() {
         qual_igreja: qualIgreja.trim() || null,
         convidado_por: convidadoPor.trim() || null,
         pedido_oracao: pedidoOracao.trim() || null,
-        acompanhantes: acompanhantes.length > 0 ? acompanhantes.filter(a => a.nome.trim()) : null,
+        acompanhantes: acompanhantes.length > 0 
+          ? acompanhantes.map(a => ({
+              nome: a.nome.trim(),
+              telefone: a.telefone.replace(/\D/g, ""),
+              parentesco: a.parentesco || null,
+              dataNascimento: a.dataNascimento?.toDate 
+                ? a.dataNascimento.toDate().toISOString().split("T")[0] 
+                : (typeof a.dataNascimento === "string" ? a.dataNascimento : null)
+            })).filter(a => a.nome)
+          : null,
       };
 
       const { error } = await supabase
