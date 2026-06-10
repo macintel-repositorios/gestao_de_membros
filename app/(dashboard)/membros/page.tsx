@@ -27,6 +27,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -74,6 +75,7 @@ import {
   HeartHandshake,
   User,
   CreditCard,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -117,12 +119,18 @@ export default function MembrosPage() {
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [memberToDeactivate, setMemberToDeactivate] = useState<MembroComUnidade | null>(null);
 
+  // Controle de expansão de cards no mobile
+  const [expandedMembros, setExpandedMembros] = useState<Record<string, boolean>>({});
+  const toggleExpandMembro = (id: string) => {
+    setExpandedMembros(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   // Estados para Drawer/Sheet
   const editFormRef = useRef<any>(null);
   const [showNovoMembro, setShowNovoMembro] = useState(false);
-  const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade[] | any>(null);
-  const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade[] | any>(null);
-  const [membroParaCartao, setMembroParaCartao] = useState<MembroComUnidade[] | any>(null);
+  const [membroParaVisualizar, setMembroParaVisualizar] = useState<MembroComUnidade | null>(null);
+  const [membroParaEditar, setMembroParaEditar] = useState<MembroComUnidade | null>(null);
+  const [membroParaCartao, setMembroParaCartao] = useState<MembroComUnidade | null>(null);
   const [acompanhamentos, setAcompanhamentos] = useState<Acompanhamento[]>([]);
   const [loadingAcomp, setLoadingAcomp] = useState(false);
 
@@ -466,7 +474,8 @@ export default function MembrosPage() {
         </Card>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          {/* Layout Desktop (Tabela) */}
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -548,20 +557,20 @@ export default function MembrosPage() {
                             <span className="sr-only">Ações</span>
                           </Button>
                         </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setMembroParaVisualizar(membro)}
-                            >
-                              <Eye className="mr-2 h-4 w-4" />
-                              Visualizar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setMembroParaCartao(membro)}
-                            >
-                              <CreditCard className="mr-2 h-4 w-4" />
-                              Gerar Cartão
-                            </DropdownMenuItem>
-                            {canEdit && (
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => setMembroParaVisualizar(membro)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Visualizar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setMembroParaCartao(membro)}
+                          >
+                            <CreditCard className="mr-2 h-4 w-4" />
+                            Gerar Cartão
+                          </DropdownMenuItem>
+                          {canEdit && (
                             <>
                               <DropdownMenuItem
                                 onClick={() => setMembroParaEditar(membro)}
@@ -580,6 +589,7 @@ export default function MembrosPage() {
                                 <Copy className="mr-2 h-4 w-4" />
                                 Copiar Link de Atualização
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => setMemberToDeactivate(membro)}
@@ -596,6 +606,126 @@ export default function MembrosPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Layout Mobile (Cards Expansíveis) */}
+          <div className="block md:hidden divide-y">
+            {filteredMembros.map((membro) => {
+              const isExpanded = !!expandedMembros[membro.id];
+              return (
+                <div key={`${membro.unidadeId}-${membro.id}`} className="p-4 space-y-3">
+                  <div 
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => toggleExpandMembro(membro.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={membro.fotoUrl || undefined} alt={membro.nome} />
+                        <AvatarFallback className="text-xs bg-muted">
+                          {membro.nome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="space-y-0.5">
+                        <div className="font-semibold text-sm">{membro.nome}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge
+                            className="text-[10px] h-4 py-0 px-1 bg-primary text-white"
+                            style={{
+                              backgroundColor: `var(--type-${membro.tipo})`,
+                            }}
+                          >
+                            {TIPOS_MEMBRO[membro.tipo]}
+                          </Badge>
+                          {membro.cargo && (
+                            <span className="text-xs text-muted-foreground">
+                              {membro.cargo === "outro" ? membro.cargoDescricao : CARGOS_MEMBRO[membro.cargo]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                  </div>
+
+                  {isExpanded && (
+                    <div className="pt-3 space-y-3 text-sm border-t border-dashed animate-in fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        {membro.telefone && (
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground font-medium">Telefone</span>
+                            <a href={`https://wa.me/55${membro.telefone}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 font-semibold mt-0.5">
+                              <Phone className="h-3 w-3" />
+                              {formatPhone(membro.telefone)}
+                            </a>
+                          </div>
+                        )}
+                        {membro.endereco?.bairro && (
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground font-medium">Bairro</span>
+                            <span className="mt-0.5">{membro.endereco.bairro}</span>
+                          </div>
+                        )}
+                        {membro.email && (
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">E-mail</span>
+                            <span className="mt-0.5 truncate">{membro.email}</span>
+                          </div>
+                        )}
+                        {unidadesParaFiltro.length > 1 && (
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">Congregação</span>
+                            <span className="mt-0.5">{getUnidadeNome(membro.unidadeId)}</span>
+                          </div>
+                        )}
+                        {membro.dataNascimento && (
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground font-medium">Aniversário</span>
+                            <span className="mt-0.5">{formatDate(membro.dataNascimento)}</span>
+                          </div>
+                        )}
+                        {membro.dataCadastro && (
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground font-medium">Membro desde</span>
+                            <span className="mt-0.5">{formatDate(membro.dataCadastro)}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 justify-end pt-2 border-t flex-wrap">
+                        <Button size="sm" variant="outline" onClick={() => setMembroParaVisualizar(membro)}>
+                          <Eye className="mr-1.5 h-3.5 w-3.5" /> Detalhes
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setMembroParaCartao(membro)}>
+                          <CreditCard className="mr-1.5 h-3.5 w-3.5" /> Cartão
+                        </Button>
+                        {canEdit && (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => setMembroParaEditar(membro)}>
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => {
+                                const origin = typeof window !== "undefined" ? window.location.origin : "";
+                                const link = `${origin}/cadastro/membro?igreja=${igrejaId}&unidade=${membro.unidadeId}&membro=${membro.id}`;
+                                navigator.clipboard.writeText(link);
+                                toast.success("Link copiado!");
+                              }}
+                            >
+                              <Copy className="mr-1.5 h-3.5 w-3.5" /> Copiar Link
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setMemberToDeactivate(membro)}>
+                              <UserX className="mr-1.5 h-3.5 w-3.5" /> Desativar
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
@@ -635,7 +765,7 @@ export default function MembrosPage() {
                   <Avatar className="h-16 w-16">
                     <AvatarImage src={membroParaVisualizar.fotoUrl || undefined} alt={membroParaVisualizar.nome} />
                     <AvatarFallback className="text-xl">
-                      {membroParaVisualizar.nome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                      {membroParaVisualizar.nome.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>

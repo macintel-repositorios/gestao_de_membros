@@ -598,8 +598,8 @@ export default function GerenciarIgrejasPage() {
             <Card key={igreja.id}>
               <Collapsible open={expandedIgrejas.has(igreja.id)} onOpenChange={() => toggleIgreja(igreja.id)}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex items-start gap-3">
                       <CollapsibleTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                           {expandedIgrejas.has(igreja.id) ? (
@@ -609,20 +609,20 @@ export default function GerenciarIgrejasPage() {
                           )}
                         </Button>
                       </CollapsibleTrigger>
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 shrink-0">
                         <Church className="h-6 w-6 text-primary" />
                       </div>
-                      <div>
-                        <CardTitle className="text-lg">{igreja.nome}</CardTitle>
-                        <CardDescription className="flex items-center gap-4 mt-1">
+                      <div className="min-w-0">
+                        <CardTitle className="text-lg truncate">{igreja.nome}</CardTitle>
+                        <CardDescription className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4 mt-1">
                           {igreja.endereco?.cidade && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 text-xs">
                               <MapPin className="h-3 w-3" />
                               {igreja.endereco.cidade}/{igreja.endereco.estado}
                             </span>
                           )}
                           {igreja.telefone && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 text-xs">
                               <Phone className="h-3 w-3" />
                               {igreja.telefone}
                             </span>
@@ -630,23 +630,25 @@ export default function GerenciarIgrejasPage() {
                         </CardDescription>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-right mr-2">
+                    <div className="flex items-center justify-between w-full md:w-auto md:justify-end gap-3 border-t pt-3 md:border-t-0 md:pt-0">
+                      <div className="text-left md:text-right mr-2">
                         <p className="text-sm font-medium">{igreja.totalMembros} membros</p>
                         <p className="text-xs text-muted-foreground">{igreja.totalUnidades} unidades</p>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => setIgrejaParaEditarId(igreja.id)}>
-                        <Pencil className="mr-2 h-3.5 w-3.5" />
-                        Editar
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:bg-destructive/10"
-                        onClick={() => setDeleteId(igreja.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setIgrejaParaEditarId(igreja.id)}>
+                          <Pencil className="mr-2 h-3.5 w-3.5" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeleteId(igreja.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
@@ -658,64 +660,172 @@ export default function GerenciarIgrejasPage() {
                         <h4 className="text-sm font-medium text-muted-foreground">Estrutura Hierárquica</h4>
                       </div>
 
-                      {isFilterActive ? (
-                        <div className="space-y-1">
-                          {getUnidadesFiltradas(igreja).length === 0 ? (
-                            <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma unidade encontrada para os filtros aplicados.</p>
-                          ) : (
-                            getUnidadesFiltradas(igreja).map(unidade => (
-                              <div key={unidade.id} className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-muted/50 group">
-                                <div 
-                                  className="h-3 w-3 rounded-full shrink-0"
-                                  style={{ backgroundColor: CORES_TIPO_UNIDADE[unidade.tipo] }}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium truncate">{unidade.nome}</span>
-                                    <Badge 
-                                      variant="secondary" 
-                                      className="text-xs"
-                                      style={{ 
-                                        backgroundColor: `${CORES_TIPO_UNIDADE[unidade.tipo]}20`,
-                                        color: CORES_TIPO_UNIDADE[unidade.tipo],
-                                      }}
-                                    >
-                                      {TIPOS_UNIDADE[unidade.tipo]}
-                                    </Badge>
+                      {/* Desktop View */}
+                      <div className="hidden md:block">
+                        {isFilterActive ? (
+                          <div className="space-y-1">
+                            {getUnidadesFiltradas(igreja).length === 0 ? (
+                              <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma unidade encontrada para os filtros aplicados.</p>
+                            ) : (
+                              getUnidadesFiltradas(igreja).map(unidade => (
+                                <div key={unidade.id} className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-muted/50 group">
+                                  <div 
+                                    className="h-3 w-3 rounded-full shrink-0"
+                                    style={{ backgroundColor: CORES_TIPO_UNIDADE[unidade.tipo] }}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium truncate">{unidade.nome}</span>
+                                      <Badge 
+                                        variant="secondary" 
+                                        className="text-xs"
+                                        style={{ 
+                                          backgroundColor: `${CORES_TIPO_UNIDADE[unidade.tipo]}20`,
+                                          color: CORES_TIPO_UNIDADE[unidade.tipo],
+                                        }}
+                                      >
+                                        {TIPOS_UNIDADE[unidade.tipo]}
+                                      </Badge>
+                                    </div>
+                                    {unidade.dirigente && (
+                                      <p className="text-xs text-muted-foreground truncate">{unidade.dirigente}</p>
+                                    )}
                                   </div>
-                                  {unidade.dirigente && (
-                                    <p className="text-xs text-muted-foreground truncate">{unidade.dirigente}</p>
-                                  )}
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Users className="h-4 w-4" />
+                                    <span>{unidade.totalMembros || 0}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                      setParentIgrejaId(igreja.id);
+                                      setUnidadeParaEditarId(unidade.id);
+                                    }}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
+                                      onClick={() => setDeleteUnidadeId({ igrejaId: igreja.id, unidadeId: unidade.id })}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <Users className="h-4 w-4" />
-                                  <span>{unidade.totalMembros || 0}</span>
+                              ))
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {igreja.unidades.map(unidade => renderUnidade(unidade, igreja.id))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mobile View */}
+                      <div className="block md:hidden space-y-3">
+                        {(isFilterActive ? getUnidadesFiltradas(igreja) : igreja.todasUnidades).length === 0 ? (
+                          <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma unidade encontrada.</p>
+                        ) : (
+                          (isFilterActive ? getUnidadesFiltradas(igreja) : igreja.todasUnidades).map((unidade) => {
+                            const isExpanded = expandedUnidades.has(unidade.id);
+                            
+                            const tiposFilhas: TipoUnidade[] = [];
+                            if (unidade.tipo === "sede") {
+                              tiposFilhas.push("congregacao", "ponto_evangelistico");
+                            } else if (unidade.tipo === "congregacao") {
+                              tiposFilhas.push("subcongregacao", "ponto_evangelistico");
+                            } else if (unidade.tipo === "subcongregacao") {
+                              tiposFilhas.push("ponto_evangelistico");
+                            }
+
+                            const pai = unidade.unidadePaiId ? igreja.todasUnidades.find(u => u.id === unidade.unidadePaiId) : null;
+
+                            return (
+                              <Card key={unidade.id} className="overflow-hidden border border-muted">
+                                <div
+                                  onClick={() => toggleUnidade(unidade.id)}
+                                  className="p-3 flex items-center justify-between cursor-pointer select-none"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div 
+                                      className="h-3 w-3 rounded-full shrink-0"
+                                      style={{ backgroundColor: CORES_TIPO_UNIDADE[unidade.tipo] }}
+                                    />
+                                    <div className="min-w-0">
+                                      <h5 className="font-semibold text-sm truncate">{unidade.nome}</h5>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <Badge 
+                                          variant="secondary" 
+                                          className="text-[10px] h-4 py-0 px-1"
+                                          style={{ 
+                                            backgroundColor: `${CORES_TIPO_UNIDADE[unidade.tipo]}20`,
+                                            color: CORES_TIPO_UNIDADE[unidade.tipo],
+                                          }}
+                                        >
+                                          {TIPOS_UNIDADE[unidade.tipo]}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                          <Users className="h-3 w-3" />
+                                          {unidade.totalMembros || 0}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
                                 </div>
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                    setParentIgrejaId(igreja.id);
-                                    setUnidadeParaEditarId(unidade.id);
-                                  }}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-7 w-7 text-destructive hover:text-destructive"
-                                    onClick={() => setDeleteUnidadeId({ igrejaId: igreja.id, unidadeId: unidade.id })}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          {igreja.unidades.map(unidade => renderUnidade(unidade, igreja.id))}
-                        </div>
-                      )}
+
+                                {isExpanded && (
+                                  <CardContent className="border-t bg-muted/20 p-3 space-y-3 text-sm animate-in fade-in duration-200">
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                      <div className="flex flex-col">
+                                        <span className="text-muted-foreground font-medium">Dirigente</span>
+                                        <span className="mt-0.5">{unidade.dirigente || "Não informado"}</span>
+                                      </div>
+                                      {pai && (
+                                        <div className="flex flex-col">
+                                          <span className="text-muted-foreground font-medium">Vinculado a</span>
+                                          <span className="mt-0.5 truncate">{pai.nome}</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Botões de Ação */}
+                                    <div className="flex flex-wrap gap-1.5 justify-end pt-2 border-t">
+                                      {tiposFilhas.map(tipo => (
+                                        <Button
+                                          key={tipo}
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 text-xs px-2"
+                                          onClick={() => abrirModalNovaUnidade(igreja.id, tipo, unidade.id)}
+                                        >
+                                          <Plus className="mr-1 h-3 w-3" style={{ color: CORES_TIPO_UNIDADE[tipo] }} />
+                                          {TIPOS_UNIDADE[tipo]}
+                                        </Button>
+                                      ))}
+                                      <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+                                        setParentIgrejaId(igreja.id);
+                                        setUnidadeParaEditarId(unidade.id);
+                                      }}>
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button 
+                                        variant="outline" 
+                                        size="icon" 
+                                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                        onClick={() => setDeleteUnidadeId({ igrejaId: igreja.id, unidadeId: unidade.id })}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </CardContent>
+                                )}
+                              </Card>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </CollapsibleContent>

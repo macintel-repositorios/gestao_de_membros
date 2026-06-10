@@ -47,7 +47,10 @@ import {
   UserX,
   Shield,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  ChevronDown,
+  Phone,
+  Mail
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -68,6 +71,10 @@ export default function UsuariosPage() {
 
   const [usuarioParaEditar, setUsuarioParaEditar] = useState<Usuario | null>(null);
   const [isNovoOpen, setIsNovoOpen] = useState(false);
+  const [expandedUsuarios, setExpandedUsuarios] = useState<Record<string, boolean>>({});
+  const toggleExpandUsuario = (uid: string) => {
+    setExpandedUsuarios(prev => ({ ...prev, [uid]: !prev[uid] }));
+  };
 
   const carregarUsuarios = async () => {
     if (!igrejaId) {
@@ -252,78 +259,166 @@ export default function UsuariosPage() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead>Nível de Acesso</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsuarios.map(usr => (
-                  <TableRow key={usr.uid}>
-                    <TableCell className="font-medium">{usr.nome || "Sem nome"}</TableCell>
-                    <TableCell>{usr.telefone || "-"}</TableCell>
-                    <TableCell>{usr.unidadeId ? getUnidadeNome(usr.unidadeId) : "Não definida"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="gap-1">
-                        {getNivelIcon(usr.nivelAcesso || "usuario")}
-                        {NIVEIS_ACESSO[usr.nivelAcesso || "usuario"] || "Usuário"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={usr.ativo !== false ? "default" : "secondary"}>
-                        {usr.ativo !== false ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {isAdmin && usr.uid !== currentUser?.uid && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
+          <>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Telefone</TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead>Nível de Acesso</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredUsuarios.map(usr => (
+                    <TableRow key={usr.uid}>
+                      <TableCell className="font-medium">{usr.nome || "Sem nome"}</TableCell>
+                      <TableCell>{usr.telefone || "-"}</TableCell>
+                      <TableCell>{usr.unidadeId ? getUnidadeNome(usr.unidadeId) : "Não definida"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="gap-1">
+                          {getNivelIcon(usr.nivelAcesso || "usuario")}
+                          {NIVEIS_ACESSO[usr.nivelAcesso || "usuario"] || "Usuário"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={usr.ativo !== false ? "default" : "secondary"}>
+                          {usr.ativo !== false ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {isAdmin && usr.uid !== currentUser?.uid && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setUsuarioParaEditar(usr)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleAtivo(usr)}>
+                                {usr.ativo ? (
+                                  <>
+                                    <UserX className="mr-2 h-4 w-4" />
+                                    Desativar
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserCheck className="mr-2 h-4 w-4" />
+                                    Ativar
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => setDeleteId(usr.uid)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Remover
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Layout Mobile (Cards Expansíveis) */}
+            <div className="block md:hidden space-y-3">
+              {filteredUsuarios.map((usr) => {
+                const isExpanded = !!expandedUsuarios[usr.uid];
+                return (
+                  <Card key={usr.uid} className="overflow-hidden border border-muted">
+                    <div
+                      onClick={() => toggleExpandUsuario(usr.uid)}
+                      className="p-4 flex items-center justify-between cursor-pointer select-none"
+                    >
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <h4 className="font-semibold text-sm truncate">{usr.nome || "Sem nome"}</h4>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="gap-1 text-[10px] h-4 py-0 px-1.5">
+                            {getNivelIcon(usr.nivelAcesso || "usuario")}
+                            {NIVEIS_ACESSO[usr.nivelAcesso || "usuario"] || "Usuário"}
+                          </Badge>
+                          <Badge variant={usr.ativo !== false ? "default" : "secondary"} className="text-[10px] h-4 py-0 px-1.5">
+                            {usr.ativo !== false ? "Ativo" : "Inativo"}
+                          </Badge>
+                        </div>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                    </div>
+
+                    {isExpanded && (
+                      <CardContent className="border-t bg-muted/20 p-4 space-y-3 text-sm animate-in fade-in duration-200">
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {usr.telefone && (
+                            <div className="flex flex-col">
+                              <span className="text-muted-foreground font-medium">Telefone</span>
+                              <a href={`tel:${usr.telefone}`} className="mt-0.5 text-primary hover:underline flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {usr.telefone}
+                              </a>
+                            </div>
+                          )}
+                          {usr.email && (
+                            <div className="flex flex-col col-span-2">
+                              <span className="text-muted-foreground font-medium">E-mail</span>
+                              <a href={`mailto:${usr.email}`} className="mt-0.5 text-primary hover:underline flex items-center gap-1 truncate">
+                                <Mail className="h-3 w-3" />
+                                {usr.email}
+                              </a>
+                            </div>
+                          )}
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">Unidade</span>
+                            <span className="mt-0.5 truncate">{usr.unidadeId ? getUnidadeNome(usr.unidadeId) : "Não definida"}</span>
+                          </div>
+                        </div>
+
+                        {isAdmin && usr.uid !== currentUser?.uid && (
+                          <div className="flex gap-2 justify-end pt-2 border-t flex-wrap">
+                            <Button size="sm" variant="outline" onClick={() => setUsuarioParaEditar(usr)}>
+                              <Edit className="mr-1.5 h-3.5 w-3.5" /> Editar
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => setUsuarioParaEditar(usr)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleToggleAtivo(usr)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleAtivo(usr)}
+                            >
                               {usr.ativo ? (
                                 <>
-                                  <UserX className="mr-2 h-4 w-4" />
-                                  Desativar
+                                  <UserX className="mr-1.5 h-3.5 w-3.5" /> Desativar
                                 </>
                               ) : (
                                 <>
-                                  <UserCheck className="mr-2 h-4 w-4" />
-                                  Ativar
+                                  <UserCheck className="mr-1.5 h-3.5 w-3.5" /> Ativar
                                 </>
                               )}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => setDeleteId(usr.uid)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remover
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setDeleteId(usr.uid)}>
+                              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remover
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          </>
           )}
         </CardContent>
       </Card>

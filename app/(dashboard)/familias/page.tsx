@@ -58,6 +58,7 @@ import {
   User,
   Phone,
   ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Familia, PARENTESCOS, SEXOS } from "@/lib/types";
@@ -75,6 +76,12 @@ export default function FamiliasPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [familiaToDeactivate, setFamiliaToDeactivate] = useState<FamiliaComUnidade | null>(null);
+
+  // Controle de expansão de cards no mobile
+  const [expandedFamilias, setExpandedFamilias] = useState<Record<string, boolean>>({});
+  const toggleExpandFamilia = (id: string) => {
+    setExpandedFamilias(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Estados para Sheets (Visualizar e Editar)
   const [familiaParaVisualizar, setFamiliaParaVisualizar] = useState<FamiliaComUnidade | null>(null);
@@ -361,7 +368,9 @@ export default function FamiliasPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+        {/* Layout Desktop (Grid de Cards) */}
+        <div className="hidden sm:grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredFamilias.map((familia) => (
             <Card key={`${familia.unidadeId}-${familia.id}`} className="relative overflow-hidden">
               <CardHeader className="pb-3">
@@ -471,6 +480,104 @@ export default function FamiliasPage() {
             </Card>
           ))}
         </div>
+
+        {/* Layout Mobile (Cards Colapsáveis) */}
+        <div className="block sm:hidden space-y-3">
+          {filteredFamilias.map((familia) => {
+            const isExpanded = !!expandedFamilias[familia.id];
+            return (
+              <Card key={`${familia.unidadeId}-${familia.id}`} className="overflow-hidden">
+                <div 
+                  className="p-4 flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => toggleExpandFamilia(familia.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Home className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">{familia.nome}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {familia.dependentes ? familia.dependentes.length : 0} dependente(s)
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                </div>
+
+                {isExpanded && (
+                  <CardContent className="border-t bg-muted/20 p-4 space-y-4 text-sm animate-in fade-in duration-200">
+                    {/* Responsáveis */}
+                    <div className="space-y-2">
+                      <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider block">Responsáveis</span>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="text-[10px]">
+                              {getInitials(familia.responsavel1Nome)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs font-medium">{familia.responsavel1Nome}</span>
+                        </div>
+                        {familia.responsavel2Nome && (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="text-[10px]">
+                                {getInitials(familia.responsavel2Nome)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-xs font-medium">{familia.responsavel2Nome}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dependentes */}
+                    <div className="space-y-2">
+                      <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider block">Dependentes</span>
+                      {familia.dependentes && familia.dependentes.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {familia.dependentes.map((dep) => (
+                            <Badge key={dep.id} variant="secondary" className="text-[10px] py-0 px-1.5">
+                              {dep.nome} ({PARENTESCOS[dep.parentesco]})
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Nenhum dependente</span>
+                      )}
+                    </div>
+
+                    {/* Unidade */}
+                    {unidadesParaFiltro.length > 1 && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t">
+                        <Building2 className="h-3.5 w-3.5" />
+                        <span>Congregação: {getUnidadeNome(familia.unidadeId)}</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 justify-end pt-2 border-t">
+                      <Button size="sm" variant="outline" onClick={() => setFamiliaParaVisualizar(familia)}>
+                        <Eye className="mr-1.5 h-3.5 w-3.5" /> Visualizar
+                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => setFamiliaParaEditar(familia)}>
+                            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setFamiliaToDeactivate(familia)}>
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Desativar
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+        </>
       )}
 
       {/* Deactivate Confirmation Dialog */}

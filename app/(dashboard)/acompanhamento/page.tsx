@@ -56,6 +56,7 @@ import {
   MapPin,
   CalendarClock,
   Trash2,
+  ChevronDown,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -83,6 +84,7 @@ export default function AcompanhamentoPage() {
   
   const [acompParaVisualizar, setAcompParaVisualizar] = useState<Acompanhamento | null>(null);
   const [isNovoOpen, setIsNovoOpen] = useState(false);
+  const [expandedAcomps, setExpandedAcomps] = useState<Record<string, boolean>>({});
 
   const canCreate = usuario?.nivelAcesso === "full" || 
                     usuario?.nivelAcesso === "admin" || 
@@ -347,58 +349,168 @@ export default function AcompanhamentoPage() {
                     {dateAcompanhamentos.length}
                   </Badge>
                 </div>
-                <Card>
-                  <CardContent className="divide-y p-0">
+                <>
+                  {/* Desktop View */}
+                  <div className="hidden sm:block">
+                    <Card>
+                      <CardContent className="divide-y p-0">
+                        {dateAcompanhamentos.map((acomp) => {
+                          const Icon = ICONES_ACOMPANHAMENTO[acomp.tipo];
+                          return (
+                            <div
+                              key={acomp.id}
+                              onClick={() => setAcompParaVisualizar(acomp)}
+                              className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50 cursor-pointer"
+                            >
+                              <div className="relative">
+                                <Avatar className="h-12 w-12">
+                                  <AvatarImage src={acomp.membroFotoUrl || undefined} alt={acomp.membroNome} />
+                                  <AvatarFallback>
+                                    {acomp.membroNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div
+                                  className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                                  style={{ backgroundColor: CORES_ACOMPANHAMENTO[acomp.tipo] }}
+                                >
+                                  <Icon className="h-3 w-3" />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium truncate">{acomp.membroNome}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 text-xs"
+                                    style={{
+                                      borderColor: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                      color: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                    }}
+                                  >
+                                    {TIPOS_ACOMPANHAMENTO[acomp.tipo]}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground truncate">
+                                  {acomp.descricao}
+                                </p>
+                                <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <User className="h-3 w-3" />
+                                  <span>{acomp.responsavelNome}</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Mobile View */}
+                  <div className="block sm:hidden space-y-3">
                     {dateAcompanhamentos.map((acomp) => {
                       const Icon = ICONES_ACOMPANHAMENTO[acomp.tipo];
+                      const isExpanded = !!expandedAcomps[acomp.id];
                       return (
-                        <div
-                          key={acomp.id}
-                          onClick={() => setAcompParaVisualizar(acomp)}
-                          className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50 cursor-pointer"
-                        >
-                          <div className="relative">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={acomp.membroFotoUrl || undefined} alt={acomp.membroNome} />
-                              <AvatarFallback>
-                                {acomp.membroNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div
-                              className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-white"
-                              style={{ backgroundColor: CORES_ACOMPANHAMENTO[acomp.tipo] }}
-                            >
-                              <Icon className="h-3 w-3" />
+                        <Card key={acomp.id} className="overflow-hidden border border-muted">
+                          <div
+                            onClick={() => setExpandedAcomps(prev => ({ ...prev, [acomp.id]: !prev[acomp.id] }))}
+                            className="p-3 flex items-center justify-between cursor-pointer select-none"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="relative shrink-0">
+                                <Avatar className="h-10 w-10">
+                                  <AvatarImage src={acomp.membroFotoUrl || undefined} alt={acomp.membroNome} />
+                                  <AvatarFallback className="text-xs bg-muted">
+                                    {acomp.membroNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div
+                                  className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-white"
+                                  style={{ backgroundColor: CORES_ACOMPANHAMENTO[acomp.tipo] }}
+                                >
+                                  <Icon className="h-2.5 w-2.5" />
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-semibold text-sm truncate">{acomp.membroNome}</h4>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] h-4 py-0 px-1 mt-0.5"
+                                  style={{
+                                    borderColor: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                    color: CORES_ACOMPANHAMENTO[acomp.tipo],
+                                  }}
+                                >
+                                  {TIPOS_ACOMPANHAMENTO[acomp.tipo]}
+                                </Badge>
+                              </div>
                             </div>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium truncate">{acomp.membroNome}</p>
-                              <Badge
-                                variant="outline"
-                                className="shrink-0 text-xs"
-                                style={{
-                                  borderColor: CORES_ACOMPANHAMENTO[acomp.tipo],
-                                  color: CORES_ACOMPANHAMENTO[acomp.tipo],
-                                }}
-                              >
-                                {TIPOS_ACOMPANHAMENTO[acomp.tipo]}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground truncate">
-                              {acomp.descricao}
-                            </p>
-                            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                              <User className="h-3 w-3" />
-                              <span>{acomp.responsavelNome}</span>
-                            </div>
-                          </div>
-                          <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                        </div>
+
+                          {isExpanded && (
+                            <CardContent className="border-t bg-muted/20 p-3 space-y-3 text-sm animate-in fade-in duration-200">
+                              <div className="space-y-2">
+                                <div className="text-xs">
+                                  <span className="text-muted-foreground font-medium block">Descrição:</span>
+                                  <p className="mt-0.5 text-muted-foreground line-clamp-4">{acomp.descricao}</p>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-dashed">
+                                  <div className="flex flex-col">
+                                    <span className="text-muted-foreground font-medium">Responsável</span>
+                                    <span className="mt-0.5">{acomp.responsavelNome}</span>
+                                  </div>
+                                  {acomp.proximoContato && (
+                                    <div className="flex flex-col">
+                                      <span className="text-muted-foreground font-medium">Próximo Contato</span>
+                                      <span className="mt-0.5 text-amber-600 dark:text-amber-400 font-semibold">
+                                        {format(acomp.proximoContato.toDate(), "dd/MM/yyyy", { locale: ptBR })}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2 justify-end pt-2 border-t">
+                                <Button size="sm" variant="outline" onClick={() => setAcompParaVisualizar(acomp)}>
+                                  Detalhes
+                                </Button>
+                                {canDelete && (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Excluir Acompanhamento</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          Tem certeza que deseja excluir este registro de acompanhamento? Esta ação não pode ser desfeita.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() => handleDelete(acomp)}
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        >
+                                          Excluir
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                )}
+                              </div>
+                            </CardContent>
+                          )}
+                        </Card>
                       );
                     })}
-                  </CardContent>
-                </Card>
+                  </div>
+                </>
               </div>
             );
           })}

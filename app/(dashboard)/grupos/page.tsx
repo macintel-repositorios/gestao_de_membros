@@ -62,6 +62,7 @@ import {
   Eye,
   Pencil,
   Phone,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Grupo, Membro, TIPOS_GRUPO, TipoGrupo } from "@/lib/types";
@@ -80,6 +81,12 @@ export default function GruposPage() {
   const [grupoToDelete, setGrupoToDelete] = useState<GrupoComDetalhes | null>(
     null
   );
+
+  // Controle de expansão de cards no mobile
+  const [expandedGrupos, setExpandedGrupos] = useState<Record<string, boolean>>({});
+  const toggleExpandGrupo = (id: string) => {
+    setExpandedGrupos(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Estados para Sheets (Visualizar e Editar)
   const [grupoParaVisualizar, setGrupoParaVisualizar] = useState<GrupoComDetalhes | null>(null);
@@ -334,7 +341,8 @@ export default function GruposPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+        <div className="hidden sm:grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {grupos.map((grupo) => (
             <Card key={grupo.id} className="relative">
               <CardHeader className="pb-2">
@@ -439,6 +447,84 @@ export default function GruposPage() {
             </Card>
           ))}
         </div>
+
+        {/* Layout Mobile (Cards Expansíveis) */}
+        <div className="block sm:hidden space-y-3">
+          {grupos.map((grupo) => {
+            const isExpanded = !!expandedGrupos[grupo.id];
+            return (
+              <Card key={grupo.id} className="overflow-hidden">
+                <div
+                  onClick={() => toggleExpandGrupo(grupo.id)}
+                  className="p-4 flex items-center justify-between cursor-pointer select-none"
+                >
+                  <div className="flex flex-col gap-1">
+                    <h4 className="font-semibold text-sm">{grupo.nome}</h4>
+                    <div className="flex items-center gap-2">
+                      <Badge className={`${getTipoColor(grupo.tipo)} text-[10px] h-4 py-0 px-1.5 text-white`}>
+                        {TIPOS_GRUPO[grupo.tipo]}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <UsersRound className="h-3 w-3" />
+                        {grupo.membrosIds.length} membros
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                </div>
+                
+                {isExpanded && (
+                  <CardContent className="border-t bg-muted/20 p-4 space-y-3 text-sm animate-in fade-in duration-200">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground font-medium">Líder</span>
+                        <span className="mt-0.5">{grupo.liderNome || "N/A"}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground font-medium">Criado em</span>
+                        <span className="mt-0.5">{formatDate(grupo.dataCriacao)}</span>
+                      </div>
+                      {grupo.raioKm && (
+                        <div className="flex flex-col col-span-2">
+                          <span className="text-muted-foreground font-medium">Raio</span>
+                          <span className="mt-0.5">{grupo.raioKm} km</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {grupo.membrosNomes && grupo.membrosNomes.length > 0 && (
+                      <div className="text-xs text-muted-foreground pt-1 border-t border-dashed">
+                        <span className="font-medium text-foreground block mb-0.5">Membros:</span>
+                        {grupo.membrosNomes.join(", ")}
+                        {grupo.membrosIds.length > 3 && ` e mais ${grupo.membrosIds.length - 3}`}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 justify-end pt-2 border-t flex-wrap">
+                      <Button size="sm" variant="outline" onClick={() => setGrupoParaVisualizar(grupo)}>
+                        <Eye className="mr-1.5 h-3.5 w-3.5" /> Detalhes
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setGrupoParaEditar(grupo)}>
+                        <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+                      </Button>
+                      {grupo.linkWhatsApp && (
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={grupo.linkWhatsApp} target="_blank" rel="noopener noreferrer">
+                            <MessageCircle className="mr-1.5 h-3.5 w-3.5 text-green-500" /> WhatsApp
+                          </a>
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setGrupoToDelete(grupo)}>
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Excluir
+                      </Button>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+        </>
       )}
 
       {/* Delete Confirmation Dialog */}

@@ -67,6 +67,7 @@ import {
   Copy,
   Share2,
   User,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Visitante } from "@/lib/types";
@@ -84,6 +85,12 @@ export default function VisitantesPage() {
   const [filterUnidade, setFilterUnidade] = useState<string>("todos");
   const [filterStatus, setFilterStatus] = useState<string>("ativos");
   const [visitanteToDeactivate, setVisitanteToDeactivate] = useState<VisitanteComUnidade | null>(null);
+
+  // Controle de expansão de cards no mobile
+  const [expandedVisitantes, setExpandedVisitantes] = useState<Record<string, boolean>>({});
+  const toggleExpandVisitante = (id: string) => {
+    setExpandedVisitantes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Estados para Sheets (Visualizar e Editar)
   const [visitanteParaVisualizar, setVisitanteParaVisualizar] = useState<VisitanteComUnidade | null>(null);
@@ -394,7 +401,8 @@ export default function VisitantesPage() {
         </Card>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          {/* Layout Desktop (Tabela) */}
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -502,6 +510,100 @@ export default function VisitantesPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Layout Mobile (Cards Expansíveis) */}
+          <div className="block md:hidden divide-y">
+            {filteredVisitantes.map((visitante) => {
+              const isExpanded = !!expandedVisitantes[visitante.id];
+              return (
+                <div key={`${visitante.unidadeId}-${visitante.id}`} className="p-4 space-y-3">
+                  <div 
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => toggleExpandVisitante(visitante.id)}
+                  >
+                    <div className="space-y-1">
+                      <div className="font-semibold text-sm">{visitante.nome || "Sem nome"}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Visita: {formatDate(visitante.dataVisita)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {visitante.convertidoParaMembro ? (
+                        <Badge className="bg-green-500 text-xs">Convertido</Badge>
+                      ) : visitante.ativo ? (
+                        <Badge variant="secondary" className="text-xs">Ativo</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs">Inativo</Badge>
+                      )}
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="pt-3 space-y-3 text-sm border-t border-dashed animate-in fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        {visitante.telefone && (
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground font-medium">WhatsApp</span>
+                            <a href={`https://wa.me/55${visitante.telefone}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 font-semibold mt-0.5">
+                              <Phone className="h-3 w-3" />
+                              {formatPhone(visitante.telefone)}
+                            </a>
+                          </div>
+                        )}
+                        <div className="flex flex-col">
+                          <span className="text-muted-foreground font-medium">Primeira Visita?</span>
+                          <span className="mt-0.5">{visitante.primeiraVisita ? "Sim" : "Não"}</span>
+                        </div>
+                        {unidadesParaFiltro.length > 1 && (
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">Congregação</span>
+                            <span className="mt-0.5">{getUnidadeNome(visitante.unidadeId)}</span>
+                          </div>
+                        )}
+                        {visitante.acompanhantes && visitante.acompanhantes.length > 0 && (
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">Acompanhantes</span>
+                            <span className="mt-0.5">{visitante.acompanhantes.length} pessoa(s)</span>
+                          </div>
+                        )}
+                        {visitante.pedidoOracao && (
+                          <div className="flex flex-col col-span-2">
+                            <span className="text-muted-foreground font-medium">Pedido de Oração</span>
+                            <span className="italic mt-0.5">"{visitante.pedidoOracao}"</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 justify-end pt-2 border-t">
+                        <Button size="sm" variant="outline" onClick={() => setVisitanteParaVisualizar(visitante)}>
+                          <Eye className="mr-1.5 h-3.5 w-3.5" /> Visualizar
+                        </Button>
+                        {canEdit && (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => setVisitanteParaEditar(visitante)}>
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+                            </Button>
+                            {!visitante.convertidoParaMembro && (
+                              <Button size="sm" variant="outline" asChild>
+                                <Link href={`/visitantes/${visitante.id}/converter?unidade=${visitante.unidadeId}`}>
+                                  <UserCheck className="mr-1.5 h-3.5 w-3.5" /> Converter
+                                </Link>
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setVisitanteToDeactivate(visitante)}>
+                              <UserX className="mr-1.5 h-3.5 w-3.5" /> Desativar
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
