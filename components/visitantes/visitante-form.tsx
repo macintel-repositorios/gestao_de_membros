@@ -183,9 +183,9 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
       } else {
         router.push("/visitantes");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao salvar visitante:", error);
-      toast.error("Erro ao salvar visitante");
+      toast.error(`Erro ao salvar visitante: ${error?.message || error?.details || (typeof error === 'object' ? JSON.stringify(error) : String(error))}`);
     } finally {
       setLoading(false);
     }
