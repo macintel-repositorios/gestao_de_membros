@@ -275,7 +275,7 @@ export default function MapaPage() {
     };
   });
 
-  const todosMapeadosNoMapa = [...membros, ...mappedVisitors];
+  const todosMapeadosNoMapa = [...membros, ...mappedVisitors] as Membro[];
 
   // Get unique bairros
   const bairros = Array.from(

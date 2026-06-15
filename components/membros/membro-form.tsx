@@ -298,6 +298,31 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
         form.setValue("cidade", data.cidade);
         form.setValue("estado", data.estado);
         toast.success("Endereço encontrado!");
+
+        // Busca as coordenadas automaticamente
+        const partesEndereco = [
+          data.logradouro,
+          form.getValues("numero"), // se houver número já preenchido
+          data.bairro,
+          data.cidade,
+          data.estado,
+          "Brasil"
+        ].filter(Boolean);
+        const endereco = partesEndereco.join(", ");
+
+        try {
+          const resGeo = await fetch("/api/geocode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endereco }),
+          });
+          const dataGeo = await resGeo.json();
+          if (resGeo.ok) {
+            setCoordenadas({ lat: dataGeo.lat, lng: dataGeo.lng });
+          }
+        } catch (err) {
+          console.error("Erro ao buscar coordenadas automaticamente:", err);
+        }
       } else {
         toast.error(data.error || "CEP não encontrado");
       }
@@ -394,6 +419,38 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
 
     setLoading(true);
     try {
+      let lat = coordenadas?.lat || null;
+      let lng = coordenadas?.lng || null;
+
+      if (!lat || !lng) {
+        if (data.logradouro && data.cidade && data.estado) {
+          try {
+            const partesEndereco = [
+              data.logradouro,
+              data.numero,
+              data.bairro,
+              data.cidade,
+              data.estado,
+              "Brasil"
+            ].filter(Boolean);
+            const endereco = partesEndereco.join(", ");
+
+            const resGeo = await fetch("/api/geocode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endereco }),
+            });
+            const dataGeo = await resGeo.json();
+            if (resGeo.ok) {
+              lat = dataGeo.lat;
+              lng = dataGeo.lng;
+            }
+          } catch (e) {
+            console.error("Erro ao autogeocodificar no submit:", e);
+          }
+        }
+      }
+
       // Determina nome e ID do cônjuge
       let nomeConjugeFinal: string | null = null;
       let conjugeIdFinal: string | null = null;
@@ -437,8 +494,8 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
         cidade: data.cidade,
         estado: data.estado,
         cep: data.cep.replace(/\D/g, ""),
-        latitude: coordenadas?.lat || null,
-        longitude: coordenadas?.lng || null,
+        latitude: lat,
+        longitude: lng,
         observacoes: data.observacoes || null,
         situacao: "ativo",
         igreja_id: igrejaId,
@@ -502,8 +559,8 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
             cidade: data.cidade,
             estado: data.estado,
             cep: data.cep.replace(/\D/g, ""),
-            latitude: coordenadas?.lat || null,
-            longitude: coordenadas?.lng || null,
+            latitude: lat,
+            longitude: lng,
             observacoes: null,
             ativo: true,
             unidade_id: selectedUnidadeId,
@@ -590,8 +647,8 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
             cidade: data.cidade,
             estado: data.estado,
             cep: data.cep.replace(/\D/g, ""),
-            latitude: coordenadas?.lat || null,
-            longitude: coordenadas?.lng || null,
+            latitude: lat,
+            longitude: lng,
             observacoes: null,
             ativo: true,
             unidade_id: selectedUnidadeId,
@@ -681,7 +738,7 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
                           <span>• Estado Civil: <span className="font-semibold text-primary">{ESTADOS_CIVIS[form.watch("estadoCivil") || "solteiro"]}</span></span>
                         )}
                         {membro && (
-                          <span>• Situação: <span className={cn("font-semibold", (membro.ativo || membro.situacao === "ativo") ? "text-emerald-600" : "text-destructive")}>{(membro.ativo || membro.situacao === "ativo") ? "Ativo" : "Inativo"}</span></span>
+                          <span>• Situação: <span className={cn("font-semibold", (membro.ativo || (membro as any).situacao === "ativo") ? "text-emerald-600" : "text-destructive")}>{(membro.ativo || (membro as any).situacao === "ativo") ? "Ativo" : "Inativo"}</span></span>
                         )}
                       </p>
                     )}

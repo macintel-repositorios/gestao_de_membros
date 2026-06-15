@@ -273,11 +273,41 @@ function CadastroMembroContent() {
         return;
       }
 
-      setLogradouro(data.logradouro || "");
-      setBairro(data.bairro || "");
-      setCidade(data.localidade || "");
-      setEstado(data.uf || "");
+      const novoLogradouro = data.logradouro || "";
+      const novoBairro = data.bairro || "";
+      const novaCidade = data.localidade || "";
+      const novoEstado = data.uf || "";
+
+      setLogradouro(novoLogradouro);
+      setBairro(novoBairro);
+      setCidade(novaCidade);
+      setEstado(novoEstado);
       toast.success("Endereço encontrado!");
+
+      // Busca as coordenadas automaticamente
+      const partesEndereco = [
+        novoLogradouro,
+        numero, // se houver número já preenchido
+        novoBairro,
+        novaCidade,
+        novoEstado,
+        "Brasil"
+      ].filter(Boolean);
+      const enderecoInput = partesEndereco.join(", ");
+
+      try {
+        const resGeo = await fetch("/api/geocode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endereco: enderecoInput }),
+        });
+        const dataGeo = await resGeo.json();
+        if (resGeo.ok) {
+          setCoordenadas({ lat: dataGeo.lat, lng: dataGeo.lng });
+        }
+      } catch (err) {
+        console.error("Erro ao buscar coordenadas automaticamente:", err);
+      }
     } catch {
       toast.error("Erro ao buscar CEP");
     }
@@ -374,6 +404,37 @@ function CadastroMembroContent() {
 
     setLoading(true);
     try {
+      let lat = coordenadas?.lat || null;
+      let lng = coordenadas?.lng || null;
+
+      if (!lat || !lng) {
+        if (logradouro.trim() && cidade.trim() && estado.trim()) {
+          try {
+            const partesEndereco = [
+              logradouro.trim(),
+              numero.trim(),
+              bairro.trim(),
+              cidade.trim(),
+              estado.trim(),
+              "Brasil"
+            ].filter(Boolean);
+            const enderecoInput = partesEndereco.join(", ");
+            const responseGeoSubmit = await fetch("/api/geocode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endereco: enderecoInput }),
+            });
+            const dataGeoSubmit = await responseGeoSubmit.json();
+            if (responseGeoSubmit.ok) {
+              lat = dataGeoSubmit.lat;
+              lng = dataGeoSubmit.lng;
+            }
+          } catch (e) {
+            console.error("Erro ao autogeocodificar no submit:", e);
+          }
+        }
+      }
+
       // Determina nome e ID do cônjuge
       let nomeConjugeFinal: string | null = null;
       let conjugeIdFinal: string | null = null;
@@ -416,8 +477,8 @@ function CadastroMembroContent() {
         bairro: bairro || null,
         cidade: cidade || null,
         estado: estado || null,
-        latitude: coordenadas?.lat || null,
-        longitude: coordenadas?.lng || null,
+        latitude: lat,
+        longitude: lng,
       };
 
       // Primeiro cadastra ou atualiza o membro principal
@@ -478,8 +539,8 @@ function CadastroMembroContent() {
           bairro: bairro || null,
           cidade: cidade || null,
           estado: estado || null,
-          latitude: coordenadas?.lat || null,
-          longitude: coordenadas?.lng || null,
+          latitude: lat,
+          longitude: lng,
         };
         
         // Cadastra o cônjuge

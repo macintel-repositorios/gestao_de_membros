@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Save, Loader2, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Save, Loader2, Search, ChevronDown, ChevronUp, MapPin } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { FotoUpload } from "@/components/membros/foto-upload";
 
@@ -58,6 +59,8 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
   const [fotoBase64, setFotoBase64] = useState<string | null>(null);
+  const [coordenadas, setCoordenadas] = useState<{ lat: number; lng: number } | null>(null);
+  const [loadingGeo, setLoadingGeo] = useState(false);
 
   // Collapsible section states
   const [activeSection, setActiveSection] = useState<string | null>(null);
@@ -121,6 +124,9 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
         setCidade(data.cidade || "");
         setEstado(data.estado || "");
         setFotoBase64(data.foto_url || null);
+        if (data.latitude && data.longitude) {
+          setCoordenadas({ lat: Number(data.latitude), lng: Number(data.longitude) });
+        }
 
         // Carregar o administrador
         try {
@@ -185,15 +191,89 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
       const data = await response.json();
 
       if (!data.erro) {
-        setLogradouro(data.logradouro || "");
-        setBairro(data.bairro || "");
-        setCidade(data.localidade || "");
-        setEstado(data.uf || "");
+        const novoLogradouro = data.logradouro || "";
+        const novoBairro = data.bairro || "";
+        const novaCidade = data.localidade || "";
+        const novoEstado = data.uf || "";
+
+        setLogradouro(novoLogradouro);
+        setBairro(novoBairro);
+        setCidade(novaCidade);
+        setEstado(novoEstado);
+        toast.success("Endereço encontrado!");
+
+        // Busca as coordenadas automaticamente
+        const partesEndereco = [
+          novoLogradouro,
+          numero, // se houver número já preenchido
+          novoBairro,
+          novaCidade,
+          novoEstado,
+          "Brasil"
+        ].filter(Boolean);
+        const endereco = partesEndereco.join(", ");
+
+        try {
+          const resGeo = await fetch("/api/geocode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endereco }),
+          });
+          const dataGeo = await resGeo.json();
+          if (resGeo.ok) {
+            setCoordenadas({ lat: dataGeo.lat, lng: dataGeo.lng });
+          }
+        } catch (err) {
+          console.error("Erro ao buscar coordenadas automaticamente:", err);
+        }
+      } else {
+        toast.error("CEP não encontrado");
       }
     } catch (error) {
       console.error("Erro ao buscar CEP:", error);
+      toast.error("Erro ao buscar CEP");
     } finally {
       setBuscandoCep(false);
+    }
+  };
+
+  const geocodarEndereco = async () => {
+    if (!logradouro || !numero || !cidade || !estado) {
+      toast.error("Preencha o endereço completo antes de localizar no mapa");
+      return;
+    }
+
+    const partesEndereco = [
+      logradouro,
+      numero,
+      bairro,
+      cidade,
+      estado,
+      "Brasil"
+    ].filter(Boolean);
+
+    const endereco = partesEndereco.join(", ");
+
+    setLoadingGeo(true);
+    try {
+      const response = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endereco }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setCoordenadas({ lat: data.lat, lng: data.lng });
+        toast.success(`Localização encontrada: ${data.formatted_address || endereco}`);
+      } else {
+        toast.error(data.error || "Não foi possível localizar o endereço");
+      }
+    } catch {
+      toast.error("Erro ao buscar localização. Verifique sua conexão.");
+    } finally {
+      setLoadingGeo(false);
     }
   };
 
@@ -272,6 +352,38 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
     try {
       const cleanNewPhone = adminTelefone.replace(/\D/g, "");
 
+      let lat = coordenadas?.lat || null;
+      let lng = coordenadas?.lng || null;
+
+      if (!lat || !lng) {
+        if (logradouro && cidade && estado) {
+          try {
+            const partesEndereco = [
+              logradouro,
+              numero,
+              bairro,
+              cidade,
+              estado,
+              "Brasil"
+            ].filter(Boolean);
+            const endereco = partesEndereco.join(", ");
+
+            const resGeo = await fetch("/api/geocode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endereco }),
+            });
+            const dataGeo = await resGeo.json();
+            if (resGeo.ok) {
+              lat = dataGeo.lat;
+              lng = dataGeo.lng;
+            }
+          } catch (e) {
+            console.error("Erro ao autogeocodificar no submit:", e);
+          }
+        }
+      }
+
       const dataToSave = {
         nome: nome.trim(),
         convencao: convencao.trim() || null,
@@ -288,6 +400,8 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
         bairro: bairro.trim() || null,
         cidade: cidade.trim() || null,
         estado: estado.trim() || null,
+        latitude: lat,
+        longitude: lng,
         ativa: true,
       };
 
@@ -784,6 +898,32 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
                     maxLength={2}
                   />
                 </div>
+              </div>
+
+              <Separator className="my-4" />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Localização no Mapa</p>
+                  <p className="text-xs text-muted-foreground">
+                    {coordenadas
+                      ? `Lat: ${coordenadas.lat.toFixed(6)}, Lng: ${coordenadas.lng.toFixed(6)}`
+                      : "Clique para localizar o endereço no mapa"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={coordenadas ? "outline" : "default"}
+                  onClick={geocodarEndereco}
+                  disabled={loadingGeo}
+                >
+                  {loadingGeo ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <MapPin className="mr-2 h-4 w-4" />
+                  )}
+                  {coordenadas ? "Atualizar Localização" : "Localizar no Mapa"}
+                </Button>
               </div>
             </CardContent>
           </CollapsibleContent>
