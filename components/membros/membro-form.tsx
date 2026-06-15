@@ -1735,30 +1735,13 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
                   />
                 </div>
 
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Localização no Mapa</p>
-                    <p className="text-xs text-muted-foreground">
-                      {coordenadas
-                        ? `Lat: ${coordenadas.lat.toFixed(6)}, Lng: ${coordenadas.lng.toFixed(6)}`
-                        : "Clique para localizar o endereço no mapa"}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant={coordenadas ? "outline" : "default"}
-                    onClick={geocodarEndereco}
-                    disabled={loadingGeo}
-                  >
-                    {loadingGeo ? (
-                      <Spinner className="mr-2 h-4 w-4" />
-                    ) : (
-                      <MapPin className="mr-2 h-4 w-4" />
-                    )}
-                    {coordenadas ? "Atualizar Localização" : "Localizar no Mapa"}
-                  </Button>
+                <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1 pt-2 border-t">
+                  <MapPin className="h-4 w-4 text-emerald-600" />
+                  <span>
+                    {coordenadas
+                      ? `Endereço localizado no mapa (Lat: ${coordenadas.lat.toFixed(6)}, Lng: ${coordenadas.lng.toFixed(6)})`
+                      : "O endereço será localizado no mapa automaticamente ao buscar o CEP ou salvar."}
+                  </span>
                 </div>
               </CardContent>
             </CollapsibleContent>
