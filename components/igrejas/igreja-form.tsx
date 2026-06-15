@@ -284,11 +284,15 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
   };
 
   const formatTelefone = (value: string) => {
-    const numeros = value.replace(/\D/g, "");
-    if (numeros.length <= 2) return numeros;
-    if (numeros.length <= 6) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-    if (numeros.length <= 10) return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
+    if (!value) return "";
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
   };
 
   const formatCnpj = (value: string) => {
@@ -768,6 +772,12 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
                     id="telefone"
                     value={telefone}
                     onChange={(e) => setTelefone(formatTelefone(e.target.value))}
+                    onBlur={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "");
+                      if (digits.length === 8 || digits.length === 9) {
+                        setTelefone(formatTelefone("11" + digits));
+                      }
+                    }}
                     placeholder="(00) 00000-0000"
                     maxLength={15}
                   />
@@ -953,6 +963,12 @@ export function IgrejaForm({ igrejaId, unidadeId, parentIgrejaId, onSuccess, onC
                     id="adminTelefone"
                     value={adminTelefone}
                     onChange={(e) => setAdminTelefone(formatTelefone(e.target.value))}
+                    onBlur={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "");
+                      if (digits.length === 8 || digits.length === 9) {
+                        setAdminTelefone(formatTelefone("11" + digits));
+                      }
+                    }}
                     placeholder="(00) 00000-0000"
                     required
                   />

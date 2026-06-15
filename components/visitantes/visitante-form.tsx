@@ -107,9 +107,24 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
     setAcompanhantes(updated);
   };
 
-  const formatPhoneInput = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    return digits;
+  const formatPhone = (value: string) => {
+    if (!value) return "";
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+  };
+
+  const cleanPhone = (value: string) => {
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
+    return digits.slice(0, 11);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -235,10 +250,16 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
                   <Label htmlFor="telefone">WhatsApp *</Label>
                   <Input
                     id="telefone"
-                    value={telefone}
-                    onChange={(e) => setTelefone(formatPhoneInput(e.target.value))}
-                    placeholder="11999999999"
-                    maxLength={11}
+                    value={formatPhone(telefone)}
+                    onChange={(e) => setTelefone(cleanPhone(e.target.value))}
+                    onBlur={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "");
+                      if (digits.length === 8 || digits.length === 9) {
+                        setTelefone("11" + digits);
+                      }
+                    }}
+                    placeholder="(11) 99999-9999"
+                    maxLength={15}
                     required
                   />
                 </div>
@@ -344,9 +365,15 @@ export function VisitanteForm({ visitante, unidadeIdParam, onSuccess }: Visitant
                       />
                       <Input
                         placeholder="WhatsApp"
-                        value={acomp.telefone}
-                        onChange={(e) => updateAcompanhante(index, "telefone", formatPhoneInput(e.target.value))}
-                        maxLength={11}
+                        value={formatPhone(acomp.telefone)}
+                        onChange={(e) => updateAcompanhante(index, "telefone", cleanPhone(e.target.value))}
+                        onBlur={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "");
+                          if (digits.length === 8 || digits.length === 9) {
+                            updateAcompanhante(index, "telefone", "11" + digits);
+                          }
+                        }}
+                        maxLength={15}
                       />
                       <Input
                         type="date"

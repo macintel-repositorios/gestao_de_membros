@@ -83,11 +83,15 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const formatTelefone = (value: string) => {
-    const numeros = value.replace(/\D/g, "");
-    if (numeros.length <= 2) return numeros;
-    if (numeros.length <= 6) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-    if (numeros.length <= 10) return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
+    if (!value) return "";
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
   };
 
   const [buscandoCep, setBuscandoCep] = useState(false);
@@ -652,7 +656,13 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
                   <Input
                     id="telefone"
                     value={formData.telefone}
-                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, telefone: formatTelefone(e.target.value) })}
+                    onBlur={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "");
+                      if (digits.length === 8 || digits.length === 9) {
+                        setFormData({ ...formData, telefone: formatTelefone("11" + digits) });
+                      }
+                    }}
                     placeholder="(00) 00000-0000"
                   />
                 </div>
@@ -953,6 +963,12 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
                       id="adminTelefone"
                       value={adminTelefone}
                       onChange={(e) => setAdminTelefone(formatTelefone(e.target.value))}
+                      onBlur={(e) => {
+                        const digits = e.target.value.replace(/\D/g, "");
+                        if (digits.length === 8 || digits.length === 9) {
+                          setAdminTelefone(formatTelefone("11" + digits));
+                        }
+                      }}
                       placeholder="(00) 00000-0000"
                       required
                     />

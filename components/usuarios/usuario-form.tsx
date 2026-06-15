@@ -40,10 +40,14 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
   const [nivelAcesso, setNivelAcesso] = useState<NivelAcesso>("user");
 
   const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, "");
+    if (!value) return "";
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
     if (digits.length <= 2) return digits;
-    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    if (digits.length <= 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
   };
 
@@ -225,8 +229,16 @@ export function UsuarioForm({ userId, onSuccess, onCancel }: UsuarioFormProps) {
             <Label htmlFor="telefone">Telefone (WhatsApp)</Label>
             <Input
               id="telefone"
-              value={telefone}
-              onChange={(e) => setTelefone(formatPhone(e.target.value))}
+              value={formatPhone(telefone)}
+              onChange={(e) => setTelefone(e.target.value)}
+              onBlur={(e) => {
+                const digits = e.target.value.replace(/\D/g, "");
+                if (digits.length === 8 || digits.length === 9) {
+                  setTelefone(formatPhone("11" + digits));
+                } else {
+                  setTelefone(formatPhone(digits));
+                }
+              }}
               placeholder="(00) 00000-0000"
             />
           </div>

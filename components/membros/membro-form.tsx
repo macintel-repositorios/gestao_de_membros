@@ -266,9 +266,14 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
 
   // Format phone for display
   const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, "");
+    if (!value) return "";
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      digits = digits.slice(2);
+    }
     if (digits.length <= 2) return digits;
-    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
   };
 
@@ -774,8 +779,18 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
                           placeholder="(11) 99999-9999"
                           value={formatPhone(field.value)}
                           onChange={(e) => {
-                            const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
-                            field.onChange(digits);
+                            let digits = e.target.value.replace(/\D/g, "");
+                            if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+                              digits = digits.slice(2);
+                            }
+                            field.onChange(digits.slice(0, 11));
+                          }}
+                          onBlur={(e) => {
+                            let digits = e.target.value.replace(/\D/g, "");
+                            if (digits.length === 8 || digits.length === 9) {
+                              field.onChange("11" + digits);
+                            }
+                            field.onBlur();
                           }}
                         />
                       </FormControl>
@@ -1117,8 +1132,18 @@ export const MembroForm = forwardRef(function MembroForm({ membro, unidadeIdPara
                                             placeholder="(11) 99999-9999"
                                             value={formatPhone(field.value || "")}
                                             onChange={(e) => {
-                                              const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
-                                              field.onChange(digits);
+                                              let digits = e.target.value.replace(/\D/g, "");
+                                              if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+                                                digits = digits.slice(2);
+                                              }
+                                              field.onChange(digits.slice(0, 11));
+                                            }}
+                                            onBlur={(e) => {
+                                              let digits = e.target.value.replace(/\D/g, "");
+                                              if (digits.length === 8 || digits.length === 9) {
+                                                field.onChange("11" + digits);
+                                              }
+                                              field.onBlur();
                                             }}
                                           />
                                         </FormControl>
