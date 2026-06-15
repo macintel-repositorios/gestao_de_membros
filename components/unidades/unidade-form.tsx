@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
-import { Building2, Loader2, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Building2, Loader2, Trash2, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { toast } from "sonner";
 import { FotoUpload } from "@/components/membros/foto-upload";
 import {
@@ -88,6 +88,49 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
     if (numeros.length <= 6) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
     if (numeros.length <= 10) return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
     return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
+  };
+
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
+  const formatCep = (value: string) => {
+    const numeros = value.replace(/\D/g, "");
+    if (numeros.length <= 5) return numeros;
+    return `${numeros.slice(0, 5)}-${numeros.slice(5, 8)}`;
+  };
+
+  const buscarCep = async () => {
+    const cep = formData.endereco.cep;
+    if (cep.length < 8) return;
+
+    const cepLimpo = cep.replace(/\D/g, "");
+    if (cepLimpo.length !== 8) return;
+
+    setBuscandoCep(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data = await response.json();
+
+      if (!data.erro) {
+        setFormData(prev => ({
+          ...prev,
+          endereco: {
+            ...prev.endereco,
+            logradouro: data.logradouro || "",
+            bairro: data.bairro || "",
+            cidade: data.localidade || "",
+            estado: data.uf || "",
+          }
+        }));
+        toast.success("Endereço encontrado!");
+      } else {
+        toast.error("CEP não encontrado");
+      }
+    } catch (error) {
+      console.error("Erro ao buscar CEP:", error);
+      toast.error("Erro ao buscar CEP");
+    } finally {
+      setBuscandoCep(false);
+    }
   };
 
   const canManage = nivelAcesso === "full" || nivelAcesso === "admin";
@@ -280,7 +323,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
       return;
     }
 
-    if (!adminNome.trim() || !adminTelefone.trim()) {
+    if (unidadeId && originalAdmin && (!adminNome.trim() || !adminTelefone.trim())) {
       toast.error("O nome e telefone do administrador são obrigatórios.");
       return;
     }
@@ -741,6 +784,38 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-2">
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="cep">CEP</Label>
+                  <Input
+                    id="cep"
+                    value={formData.endereco.cep}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        endereco: { ...formData.endereco,  cep: formatCep(e.target.value) },
+                      })
+                    }
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-8"
+                  onClick={buscarCep}
+                  disabled={buscandoCep || formData.endereco.cep.length < 9}
+                >
+                  {buscandoCep ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  <span className="ml-2">Buscar</span>
+                </Button>
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="logradouro">Logradouro</Label>
@@ -801,7 +876,7 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
                   />
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="cidade">Cidade</Label>
                   <Input
@@ -824,25 +899,11 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        endereco: { ...formData.endereco,  estado: e.target.value },
+                        endereco: { ...formData.endereco,  estado: e.target.value.toUpperCase() },
                       })
                     }
                     placeholder="SP"
                     maxLength={2}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cep">CEP</Label>
-                  <Input
-                    id="cep"
-                    value={formData.endereco.cep}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        endereco: { ...formData.endereco,  cep: e.target.value },
-                      })
-                    }
-                    placeholder="00000-000"
                   />
                 </div>
               </div>
@@ -852,54 +913,56 @@ export function UnidadeForm({ unidadeId, defaultTipo, defaultUnidadePaiId, onSuc
       </Collapsible>
 
       {/* Administrador do Sistema */}
-      <Collapsible open={activeSection === "admin"} onOpenChange={(open) => setActiveSection(open ? "admin" : null)} className="w-full">
-        <Card>
-          <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    Administrador do Sistema
-                  </CardTitle>
-                  <CardDescription>Cadastre ou atualize as informações de acesso para o administrador desta igreja</CardDescription>
-                  {activeSection !== "admin" && adminNome && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Admin: <span className="font-semibold text-primary">{adminNome}</span> ({adminTelefone})
-                    </p>
-                  )}
+      {unidadeId && originalAdmin && (
+        <Collapsible open={activeSection === "admin"} onOpenChange={(open) => setActiveSection(open ? "admin" : null)} className="w-full">
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/40 transition-colors select-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      Administrador do Sistema
+                    </CardTitle>
+                    <CardDescription>Cadastre ou atualize as informações de acesso para o administrador desta igreja</CardDescription>
+                    {activeSection !== "admin" && adminNome && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Admin: <span className="font-semibold text-primary">{adminNome}</span> ({adminTelefone})
+                      </p>
+                    )}
+                  </div>
+                  {activeSection === "admin" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                 </div>
-                {activeSection === "admin" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-              </div>
-            </CardHeader>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="space-y-4 pt-2">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="adminNome">Nome do Administrador *</Label>
-                  <Input
-                    id="adminNome"
-                    value={adminNome}
-                    onChange={(e) => setAdminNome(e.target.value)}
-                    placeholder="Nome do administrador"
-                    required
-                  />
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-2">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="adminNome">Nome do Administrador *</Label>
+                    <Input
+                      id="adminNome"
+                      value={adminNome}
+                      onChange={(e) => setAdminNome(e.target.value)}
+                      placeholder="Nome do administrador"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adminTelefone">Telefone (WhatsApp) *</Label>
+                    <Input
+                      id="adminTelefone"
+                      value={adminTelefone}
+                      onChange={(e) => setAdminTelefone(formatTelefone(e.target.value))}
+                      placeholder="(00) 00000-0000"
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="adminTelefone">Telefone (WhatsApp) *</Label>
-                  <Input
-                    id="adminTelefone"
-                    value={adminTelefone}
-                    onChange={(e) => setAdminTelefone(formatTelefone(e.target.value))}
-                    placeholder="(00) 00000-0000"
-                    required
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end gap-4">
